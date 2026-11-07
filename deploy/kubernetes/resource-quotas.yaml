@@ -1,0 +1,3 @@
+# НЕ ГОТОВЫЙ manifest: комментарий-заготовка, не ресурс Kubernetes.
+# Глобальный предел sandbox Pod и ресурсов namespace.
+# См. docs/security.md; node provisioning runsc/CNI/watchdog обязателен отдельно.

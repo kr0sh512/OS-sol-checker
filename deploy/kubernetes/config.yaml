@@ -1,0 +1,3 @@
+# НЕ ГОТОВЫЙ manifest: комментарий-заготовка, не ресурс Kubernetes.
+# Несекретные параметры; реальные credentials только через Secret.
+# См. docs/security.md; node provisioning runsc/CNI/watchdog обязателен отдельно.

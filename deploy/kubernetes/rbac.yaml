@@ -1,0 +1,3 @@
+# НЕ ГОТОВЫЙ manifest: комментарий-заготовка, не ресурс Kubernetes.
+# Namespace-scoped worker права; sandbox без credentials.
+# См. docs/security.md; node provisioning runsc/CNI/watchdog обязателен отдельно.

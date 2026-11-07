@@ -1,0 +1,3 @@
+# НЕ ГОТОВЫЙ manifest: комментарий-заготовка, не ресурс Kubernetes.
+# Шаблон compile/run Pod: gVisor, non-root, bounded tmpfs, no tokens, deadline.
+# См. docs/security.md; node provisioning runsc/CNI/watchdog обязателен отдельно.

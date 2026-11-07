@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# OS-sol-checker local credentials and runtime data
+.env.*
+!.env.example
+/var/

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling>=1.26,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "os-sol-checker"
+version = "0.0.0"
+description = "Structure and specification for an isolated C solution checker"
+readme = "README.md"
+requires-python = ">=3.12"
+# No implementation dependencies yet. Select and lock them when implementing
+# the stack specified in docs/architecture.md; this is not a runnable service.
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/os_sol_checker"]
