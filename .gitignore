@@ -223,3 +223,4 @@ __marimo__/
 .env.*
 !.env.example
 /var/
+/deploy/secrets/

@@ -1,1 +1,12 @@
-<!-- Заготовка без интерфейса. Список задач темы и признак недоступной проверки. См. docs/submissions.md. -->
+{% extends 'base.html' %}
+{% block title %}{{ topic.title }} — Практикум по ОС{% endblock %}
+{% block content %}
+<h1>{{ topic.title }}</h1>
+<ul class="cards">
+{% for item in topic.tasks %}
+  <li><a href="{{ url_for('task_page', task_id=item.id) }}"><h2>{{ item.title }}</h2>
+    {% if item.availability %}<span>Открыть задание →</span>{% else %}<span class="unavailable">Недоступно: {{ item.reason or 'Проверка отключена' }}</span>{% endif %}
+  </a></li>
+{% else %}<li>В этой теме пока нет заданий.</li>{% endfor %}
+</ul>
+{% endblock %}

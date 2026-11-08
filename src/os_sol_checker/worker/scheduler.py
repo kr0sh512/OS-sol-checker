@@ -96,7 +96,7 @@ class Scheduler:
                         if task.done():
                             self.active.pop(job_id)
                             if not task.cancelled() and task.exception():
-                                logger.error("Job task failed: %s", job_id)
+                                raise RuntimeError(f"job finalization failed: {job_id}") from None
                         elif not await self.store.job_is_current(job_id):
                             task.cancel()
                     while len(self.active) < self.settings.max_concurrent_sandboxes and await self.store.worker_alive():
