@@ -1,1 +1,38 @@
-<!-- Заготовка без интерфейса. Общая раскладка, навигация, профиль и доступность. См. docs/submissions.md. -->
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Проверка решений по ОС{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+  <script src="{{ url_for('static', path='/app.js') }}" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Перейти к содержимому</a>
+  <header class="site-header"><a href="/">Практикум по операционным системам</a><span>Проверка решений на C</span></header>
+  <main id="main" class="layout">
+    <nav aria-label="Хлебные крошки"><ol class="breadcrumbs">
+      <li><a href="/">Темы</a></li>
+      {% if topic %}<li><a href="{{ url_for('topic_page', topic_id=topic.id) }}">{{ topic.title }}</a></li>{% endif %}
+      {% if task %}<li aria-current="page">{{ task.title }}</li>{% endif %}
+    </ol></nav>
+    {% block content %}{% endblock %}
+    {% if profile %}
+    <section class="panel profile" aria-labelledby="profile-title">
+      <h2 id="profile-title">Ваш профиль</h2>
+      <form id="profile-form">
+        <div class="form-grid">
+          <label for="name">Имя<input id="name" name="name" value="{{ profile.name or '' }}" maxlength="120" required autocomplete="name"></label>
+          <label for="group">Группа<input id="group" name="group" value="{{ profile.group or '' }}" maxlength="64" required autocomplete="off"></label>
+        </div>
+        <button id="save-profile" type="submit" disabled>Сохранить профиль</button>
+      </form>
+      <p>Имя и группа не удостоверяются. Успешный код сохраняется в закрытом постоянном архиве.</p>
+      <p id="profile-message" role="status" aria-live="polite">Загрузка профиля…</p>
+    </section>
+    {% endif %}
+    <noscript><p class="notice">Для сохранения профиля, отправки и обновления результата включите JavaScript. Условия и подсказки доступны без него.</p></noscript>
+  </main>
+  <footer>Один файл .c. Изолированная проверка. Результат привязан к версии тестов и политики.</footer>
+</body>
+</html>

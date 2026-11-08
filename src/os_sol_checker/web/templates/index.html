@@ -1,1 +1,11 @@
-<!-- Заготовка без интерфейса. Список тем и состояние каталога. См. docs/submissions.md. -->
+{% extends 'base.html' %}
+{% block title %}Темы — Практикум по ОС{% endblock %}
+{% block content %}
+<h1>Темы практикума</h1>
+<p class="lede">Выберите тему, затем задание. Условия и подсказки открываются до отправки решения.</p>
+<ul class="cards">
+{% for item in snapshot.topics %}
+  <li><a href="{{ url_for('topic_page', topic_id=item.id) }}"><h2>{{ item.title }}</h2><span>{{ item.tasks | length }} заданий →</span></a></li>
+{% else %}<li>В опубликованном каталоге пока нет тем.</li>{% endfor %}
+</ul>
+{% endblock %}

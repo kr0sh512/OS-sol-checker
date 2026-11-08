@@ -1,1 +1,1 @@
-"""HTTP и серверный интерфейс; запуск недоверенного кода здесь запрещён. Только заготовка, без реализации."""
+"""Public HTTP routes, security, server-rendered views, and static browser assets."""
