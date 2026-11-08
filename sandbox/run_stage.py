@@ -1,1 +1,1 @@
-"""Заготовка run stage: bounded payload, rlimits, exec. Только внутри gVisor; docs/security.md."""
+"""Заготовка run stage: stdin, rlimits, exec внутри дочернего nsjail. См. docs/security.md."""

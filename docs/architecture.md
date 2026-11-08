@@ -2,15 +2,15 @@
 
 ## Статус и границы
 
-Это спецификация и структура будущей системы, не работающий сервис. Исходники содержат только описания назначения; контейнерные и Kubernetes-файлы — комментарии. Нет серверных обработчиков, миграций, запуска кода, установленных зависимостей или готовой защиты. Не принимать реальные посылки до выполнения критериев [плана реализации](implementation.md).
+Это спецификация и структура будущей системы, не работающий сервис. Исходники содержат только описания назначения; Dockerfile, Compose и профили nsjail — заготовки. Нет серверных обработчиков, миграций, запуска кода, установленных зависимостей или готовой защиты. Не принимать реальные посылки до выполнения критериев [плана реализации](implementation.md).
 
 ## Технологии и процессы
 
 - Python 3.12+, FastAPI, Uvicorn, Jinja2; обычные HTML-страницы, небольшой JavaScript для отправки файла и опроса статуса. Отдельный SPA/Node.js не нужен.
 - CommonMark через markdown-it-py, HTML-санитизация через nh3. HTML из задания не исполняется.
 - PostgreSQL, psycopg 3: две базы с разными ролями и жизненными циклами — `checker_transient` и `checker_archive`. Дополнительный брокер очереди не нужен.
-- Kubernetes API и gVisor (`RuntimeClass: gvisor`, handler `runsc`): отдельный Pod для компиляции и отдельный Pod для каждого теста. Компиляция тоже обрабатывает недоверенный ввод.
-- Один образ приложения, разные процессы `web`, `worker`, `catalog-sync`; отдельные образы компилятора и запуска. Версии зависимостей и образы по digest фиксирует реализующий агент в lock-файле и deploy-конфигурации.
+- Отдельный runner-контейнер с nsjail и GCC: новая песочница процессов на компиляцию и каждый тест. Новые контейнеры на посылку не создаются, доступа к Docker socket нет. Компиляция тоже обрабатывает недоверенный ввод.
+- Docker Compose — основной способ описания и развёртывания системы: корневой `docker-compose.yml`. Один образ приложения для `web`, `worker`, `catalog-sync`; отдельный образ `runner` включает компилятор и два изолированных rootfs. Версии зависимостей, nsjail и образы фиксируются при реализации.
 
 ```mermaid
 flowchart LR
@@ -22,16 +22,16 @@ flowchart LR
     Worker[Worker / планировщик] --> Transient
     Worker --> Catalog
     Worker --> Archive[(Постоянный архив)]
-    Worker --> Kube[Kubernetes API]
-    Kube --> Compile[gVisor: компиляция]
-    Kube --> Run[gVisor: один тест]
+    Worker --> Runner[Runner: внутренний HTTP API]
+    Runner --> Compile[nsjail: компиляция]
+    Runner --> Run[nsjail: один тест]
 ```
 
 ## Границы модулей
 
 | Каталог / файл | Ответственность |
 | --- | --- |
-| `src/os_sol_checker/domain/` | Типы задания, посылки и результата; состояния и чистые политики идентичности/сравнения. Без HTTP, SQL и Kubernetes. |
+| `src/os_sol_checker/domain/` | Типы задания, посылки и результата; состояния и чистые политики идентичности/сравнения. Без HTTP, SQL и инфраструктурных SDK. |
 | `application/catalog.py` | Публикация и чтение согласованного каталога. |
 | `application/submissions.py` | Приём посылки, проверка кэша, создание записи и задания очереди. |
 | `application/judging.py` | Компиляция, последовательные тесты, первый сбой, терминальный результат. |
@@ -40,12 +40,13 @@ flowchart LR
 | `ports/` | Контракты каталога, временного хранилища, архива, очереди и песочницы. |
 | `adapters/catalog/` | Безопасное получение Git-снимка, парсинг структуры/Markdown и отпечаток tests. |
 | `adapters/postgres/` | Реализации хранилищ, транзакций и очереди. |
-| `adapters/kubernetes/` | Создание, обмен данными, наблюдение и гарантированная уборка sandbox Pod. |
+| `adapters/runner/` | Клиент внутреннего HTTP API runner, ограниченный транспорт и удалённый cleanup. |
 | `worker/` | Единственный активный планировщик, слоты, восстановление после сбоев. |
+| `runner/` | Внутренний API, авторизация worker, N локальных слотов, watchdog и адаптер nsjail. Не читает БД или каталог тестов. |
 | `web/` | HTTP, cookies, CSRF, шаблоны, статические ресурсы; без запуска процессов. |
-| `sandbox/` | Минимальные входные программы compile/run stage; выполняются только внутри gVisor. |
+| `sandbox/` | Изолированные compile/run stage, не имеющие доступа к управляющему API runner. |
 | `migrations/transient/`, `migrations/archive/` | Независимые миграции двух баз. |
-| `deploy/` | Контейнеры и конфигурация кластера; не код бизнес-логики. |
+| `docker-compose.yml`, `deploy/` | Основное описание сервисов, Dockerfile, профили nsjail и защиты контейнеров; не бизнес-логика. |
 
 Не создавать отдельный микросервис для каждого модуля. Зависимости направлены из адаптеров в application/domain; домен не импортирует адаптеры. Интерфейсы выделены там, где пользователь ожидает смену алгоритма: `SourceIdentity`, `TestsFingerprint`, `OutputComparator`, `AcceptedSolutionStore`, `SandboxBackend`.
 
@@ -63,12 +64,14 @@ flowchart LR
 | `Queue` | `claim()`, `finish()`, `invalidate_generation()`; очередь и посылка в одной временной БД. |
 | `AcceptedSolutionStore` | `record_success(identity, source, task_id, context, submitter)`; атомарная уникальность blob и связи с задачей. |
 | `OutputComparator` | `compare(expected_bytes, actual_bytes) -> match / bounded_diff`; начальная политика — строгое побайтовое равенство. |
-| `SandboxBackend` | `compile(source, policy, deadline) -> artifact / failure`, `run(artifact, stdin, policy, deadline) -> outcome`, `destroy(handle)`; лимиты действуют и при потере связи с worker. |
+| `SandboxBackend` | `open(submission_id, policy, remaining_seconds) -> handle`, `compile(handle, source) -> artifact / failure`, `run(handle, artifact, stdin) -> outcome`, `destroy(handle)`; runner сам ограничивает время и слоты даже при потере worker. |
 | `SessionStore` | Случайная сессия, профиль, принадлежность посылок, last-submission; UUID посылки сам по себе не даёт доступ. |
 
-`SandboxOutcome` содержит exit code/signal, причину принудительной остановки, wall time и ограниченные stdout/stderr. Нельзя определять причину остановки только по тексту stderr. Контекст проверки: commit каталога, tests digest, generation, compiler/runtime image digest, flags digest, limits и comparator version. Он неизменяем после приёма.
+`SandboxOutcome` содержит exit code/signal, причину принудительной остановки, wall time и ограниченные stdout/stderr. Нельзя определять причину остановки только по тексту stderr. Контекст проверки: commit каталога, tests digest, generation, runner image digest, sandbox profile digest (nsjail/rootfs/seccomp), flags digest, limits и comparator version. Он неизменяем после приёма; runner обязан подтвердить запрошенную политику.
 
 Архив хранит исторический факт успеха в конкретном контексте, поэтому поздний commit старой проверки допустим только со старым контекстом и никогда не становится текущим результатом. Общая транзакция двух БД не нужна. `accepted` публикуется после подтверждения архива и повторной проверки generation в transient; смена tests не ждёт доступности архива.
+
+Runner принимает только внутренние аутентифицированные запросы от worker. `RUNNER_URL=http://runner:8081`, порт не публикуется на хосте. `RUNNER_TOKEN` — обязательный секрет worker/runner, отсутствующий в web и дочерних jail. API runner: `POST /v1/executions` резервирует слот и фиксирует невозобновляемый deadline; `POST /v1/executions/{id}/compile` компилирует один исходник; `POST /v1/executions/{id}/run` запускает следующий тест; `GET /v1/executions` возвращает контроллеру активные handles для восстановления; `DELETE /v1/executions/{id}` идемпотентно прекращает процессы и удаляет данные. Артефакт остаётся внутри runner, клиент получает только непрозрачную ссылку. Точный транспорт и ошибки определены в [безопасности](security.md).
 
 ## Настройки по умолчанию
 
@@ -80,9 +83,9 @@ flowchart LR
 | `QUEUE_CAPACITY` | 1000 | Максимум ожидающих уникальных jobs; followers не занимают новое место. |
 | `COMPILE_TIMEOUT_SECONDS` | 10 | Wall time процесса компиляции. |
 | `RUN_TIMEOUT_SECONDS` | 2 | Wall time одного теста. |
-| `SUBMISSION_DEADLINE_SECONDS` | 60 | Всё активное выполнение, включая создание и уборку Pod; ожидание очереди не входит. |
-| `SANDBOX_MEMORY_MIB` | 256 | Предел памяти одного stage, включая служебную программу. |
-| `SANDBOX_PIDS_LIMIT` | 64 | Предел процессов всего sandbox cgroup; проверяется на узле. |
+| `SUBMISSION_DEADLINE_SECONDS` | 60 | Активное выполнение, создание и уборка jail; ожидание очереди не входит. |
+| `SANDBOX_MEMORY_MIB` | 256 | Предел памяти всего дерева процессов одного stage. |
+| `SANDBOX_PIDS_LIMIT` | 64 | Предел процессов всего sandbox cgroup, не каждого процесса отдельно. |
 | `SANDBOX_TMP_MIB` | 32 | Ограниченный memory-backed scratch. |
 | `MAX_OUTPUT_BYTES` | 65536 | Общий stdout + stderr одного stage; превышение останавливает stage. |
 | `MAX_ARTIFACT_BYTES` | 1048576 | Предел скомпилированного файла; отдельный бинарный канал. |
@@ -92,7 +95,9 @@ flowchart LR
 
 Изменение влияющих на проверку настроек создаёт новый `judge_policy_digest`; старые кэш-результаты не подходят. Проверять настройки при старте: положительные значения, compile/run timeout не выше общего deadline, общий deadline не выше 60 секунд. Секреты не имеют значений по умолчанию.
 
-`PUBLIC_ORIGIN` (точный HTTPS origin интерфейса) и `CSRF_SECRET` (криптографически случайный серверный секрет) обязательны без defaults, как и обе database URL и image digests. Секреты передаются только окружением/Secret, не в файлах репозитория.
+Транспорт начальной политики рассчитан на `0 < MAX_SOURCE_BYTES <= 102400`, `0 < MAX_OUTPUT_BYTES <= 65536` и `0 < MAX_ARTIFACT_BYTES <= 1048576`. Превышение этих верхних границ — ошибка конфигурации, а не неявное усечение данных. Меньшие лимиты проверяются обеими сторонами по подтверждённой политике.
+
+`PUBLIC_ORIGIN` (точный HTTPS origin интерфейса), `CSRF_SECRET`, `RUNNER_TOKEN`, обе database URL и `RUNNER_IMAGE` (неизменяемая ссылка по digest) обязательны без defaults. Секреты доступны только нужным сервисам и не попадают в jail. Число runner-реплик — строго одно: глобальный предел обеспечивают worker и авторитетный локальный семафор runner. Поддерживаемый Linux-хост, cgroup delegation и проверенные права описаны в [развёртывании](deployment.md).
 
 ## Связанные спецификации
 
@@ -100,3 +105,4 @@ flowchart LR
 - [Посылки, БД, cookies, HTTP и интерфейс](submissions.md).
 - [Песочница, ограничения и развёртывание](security.md).
 - [Порядок реализации и проверка готовности](implementation.md).
+- [Docker Compose и требования к Linux-хосту](deployment.md).

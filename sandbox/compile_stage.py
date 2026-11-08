@@ -1,1 +1,1 @@
-"""Заготовка compile stage, только внутри gVisor. Протокол и лимиты: docs/security.md."""
+"""Заготовка compile stage, только внутри дочернего nsjail runner. См. docs/security.md."""

@@ -1,0 +1,78 @@
+# НЕ ПРИГОДЕН ДЛЯ ЗАПУСКА: только спецификация будущего Docker Compose.
+# Здесь намеренно нет исполняемых services, images, entrypoints или healthchecks.
+# docker compose config/up сейчас не являются поддерживаемым запуском проекта.
+# Реализация приложения и конфигурации контейнеров ещё отсутствует.
+# Основной контракт: docs/architecture.md, docs/security.md, docs/deployment.md.
+#
+# Целевая топология одного проверенного Linux-хоста:
+# - web, worker, catalog-sync: один application image;
+#   сборка: deploy/containers/application.Dockerfile.
+# - runner: отдельный immutable image с GCC, nsjail и compile/run rootfs;
+#   сборка: deploy/containers/runner.Dockerfile. Строго один экземпляр.
+# - postgres-transient: отдельная временная PostgreSQL, bounded ephemeral tmpfs.
+# - postgres-archive: отдельная PostgreSQL, persistent volume и проверяемый backup.
+# - Один активный worker: PostgreSQL advisory lock, recovery перед claims.
+# - Никакого Docker socket и контейнеров на отдельную посылку.
+#
+# Целевые сети (не все сервисы в одной общей сети):
+# - frontend: только web; доступ через HTTPS reverse proxy оператора.
+#   Если proxy на хосте, backend web публикуется только на loopback хоста.
+# - db-transient (internal): web, worker, catalog-sync, postgres-transient.
+# - db-archive (internal): только worker и postgres-archive.
+# - worker-runner (internal): только worker и runner.
+# - catalog-egress: catalog-sync -> фиксированный upstream GitHub по HTTPS;
+#   отдельные проверенные firewall/egress правила хоста.
+# - Runner и обе БД не публикуют порты на хосте.
+#
+# Целевые mounts и жизненный цикл:
+# - Catalog snapshots volume: catalog-sync writer, web/worker read-only readers.
+# - Runner не видит каталог, БД, expected output или чужие исходники.
+# - Transient PostgreSQL data: bounded tmpfs, без постоянного volume и backup.
+# - Archive PostgreSQL data: отдельный persistent volume, backup/restore.
+# - Runner scratch: приватный bounded tmpfs, не shared volume с worker.
+# - Каждый compile/run: новая jail, отдельный bounded tmpfs и cgroup;
+#   между стадиями только runner хранит приватный артефакт до 1 МиБ.
+#
+# Целевые настройки (это комментарии, не рабочие значения окружения):
+# RUNNER_URL=http://runner:8081
+# RUNNER_TOKEN=  обязательный секрет без default; только worker и runner.
+# RUNNER_IMAGE=  обязательная immutable ссылка по digest, не изменяемый tag.
+# MAX_CONCURRENT_SANDBOXES=4  worker limit + авторитетный semaphore runner.
+# COMPILE_TIMEOUT_SECONDS=10; RUN_TIMEOUT_SECONDS=2.
+# SUBMISSION_DEADLINE_SECONDS=60  включая резервирование, создание и cleanup.
+# MAX_SOURCE_BYTES=102400; MAX_OUTPUT_BYTES=65536 (stdout+stderr до base64).
+# MAX_ARTIFACT_BYTES=1048576; внутренний MAX_TEST_STDIN_BYTES=1048576.
+# SANDBOX_MEMORY_MIB=256; SANDBOX_PIDS_LIMIT=64; SANDBOX_TMP_MIB=32.
+# CPU quota стадии: один CPU; внешний бюджет: N стадий + trusted overhead.
+# Все тела/заголовки API ограничены; policy digests фиксируют лимиты.
+# PUBLIC_ORIGIN, CSRF_SECRET и database credentials обязательны без secrets defaults.
+# Отдельные роли БД для сервисов; archive credentials только worker.
+# Не передавать всему приложению общий env_file со всеми секретами.
+#
+# Предпосылки, которые рабочий Compose должен явно учитывать:
+# - Linux, rootful Docker Engine, Compose plugin, cgroup v2;
+#   версия/профили/минимальные capabilities проверяются на опорном хосте.
+# - Явно делегированное runner поддерево cgroup v2: memory/pids/cpu, cgroup.kill.
+#   Нужна отдельная host provisioning процедура/скрипт при реализации;
+#   нельзя bind-mount весь writable cgroup filesystem хоста.
+# - Новые network/user/PID/mount/IPC/UTS namespaces для каждой jail.
+# - Private PID namespace внешнего контейнера, не host PID namespace.
+# - Supervisor и отдельный watchdog вне jail; при отказе остановить потомков.
+# - Внешние security profiles: deploy/security/runner-seccomp.json,
+#   deploy/security/runner-apparmor.profile; сейчас также заготовки.
+# - Внутренние profiles: deploy/nsjail/compile.cfg и deploy/nsjail/run.cfg.
+# - Не задавать privileged: true, seccomp=unconfined или отключение AppArmor
+#   как defaults; разрешения runner уточняются испытаниями, не обходом защиты.
+# - Внешние memory/PID/CPU/tmpfs limits для runner включают N стадий + overhead;
+#   отдельно ограничить application, PostgreSQL и журналы, оставить резерв ОС.
+# - Web/worker/catalog-sync non-root; секреты и API fd не наследуются jail.
+# - Readiness false без обязательных namespaces/cgroup/профилей; без fallback.
+# - Отмена: cgroup.kill, wait/reap, mount/tmp cleanup; слот только после уборки.
+# - Restart runner теряет handles: infrastructure_error, не слепой повтор.
+# - Plaintext bearer только в приватной сети одного хоста; вне неё нужен
+#   аутентифицированный шифрованный транспорт.
+# - Физическое завершение по deadline best effort при зависшем ядре/хосте.
+#
+# После реализации: docker compose config, затем docker compose up -d,
+# миграции/готовность/recovery и испытания по docs/implementation.md.
+# До этого файл остаётся исключительно comment-only placeholder.

@@ -1,3 +1,0 @@
-# НЕ ГОТОВЫЙ manifest: комментарий-заготовка, не ресурс Kubernetes.
-# Web Deployment/Service, singleton worker Recreate, catalog-sync workload.
-# См. docs/security.md; node provisioning runsc/CNI/watchdog обязателен отдельно.
