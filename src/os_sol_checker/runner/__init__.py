@@ -1,1 +1,1 @@
-"""Доверенный runner-контейнер с nsjail; не читает БД и каталог тестов. Без реализации."""
+"""Authenticated nsjail runner, independent watchdog and outer PID1 supervisor."""
