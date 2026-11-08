@@ -72,7 +72,7 @@ Runner запускается только в подготовленном ис�
 
 ```sh
 uv run pytest
-uv run ruff check src tests
+uv run ruff check src tests sandbox deploy
 ```
 
 Для PostgreSQL-регрессий указать две owner DSN **в отдельных тестовых базах**:
@@ -86,6 +86,19 @@ uv run pytest tests/integration/test_postgres.py
 Каждый PostgreSQL-тест создаёт и удаляет собственные схемы; проверка ролей дополнительно требует `CREATEROLE`. Без DSN соответствующие проверки пропускаются. Для реального runner smoke обязательны поддерживаемый runtime и делегирование; тесты с моделированными I/O-границами не доказывают изоляцию.
 
 Проектные пределы: файл до **102400 байт включительно**, N=4, компиляция 10 секунд, тест 2 секунды, общий активный бюджет до 60 секунд. Физическая остановка при зависшем ядре/замороженном хосте не может быть безусловно гарантирована. До подтверждённой уборки слот не освобождается.
+
+### Выполнено при интеграции
+
+- `uv sync --frozen --extra dev`; полный `uv run pytest -q` с настоящими двумя PostgreSQL DSN: **204 passed, 8 skipped**. Пропущены opt-in проверки реального nsjail. Осталось одно стороннее предупреждение Starlette о deprecated httpx TestClient; оно не подавлено.
+- `uv run ruff check src tests sandbox deploy`: все проверки пройдены.
+- Миграции и least-privilege grants применены к настоящему PostgreSQL; повторный запуск мигратора успешен, включая `002_submission_test_count.sql`. Интеграционные регрессии проверяют кэш/followers, архив, invalidation и конкурентные переходы.
+- Настоящие `checker-catalog --once` и polling-процесс импортировали upstream `ab6760a333dc1b452aac6e2cb37ffa9c850c4c3c`: одна активная задача, две пары пустых тестов и две подсказки. Две последовательные публикации неизменённого дерева сохранили generation. Пустые upstream-тесты не доказывают корректность judge.
+- Chromium через локальный HTTPS → HTTP reverse proxy: навигация, профиль/reload, независимые подсказки, управление клавиатурой, UUID, очередь, включительная граница файла и серверный `413 source_too_large`. На ширине 390 CSS px горизонтального переполнения нет; styles/scripts загружаются без mixed content.
+- Отображение результата, повторный cache hit с новым UUID и восстановление последней посылки проверены на **явно искусственном compile_error в отдельной временной БД**. Этот UI smoke не компилирует и не исполняет C и не является end-to-end проверкой judge.
+- Оба Dockerfile успешно собраны через rootless Podman. `docker compose config` разобран поставщиком Podman Compose 1.6.0; полный Compose stack на rootful Docker здесь не поднимался.
+- Собранный runner в неподготовленном rootless-контейнере объявил execution disabled: аутентифицированные `/health` и валидное резервирование вернули `503`, список executions пуст. Fallback не использовался.
+
+**Граница проверки:** на этом хосте нет поддерживаемого rootful Docker/AppArmor/delegated-cgroup окружения. Настоящие compile/run, hostile-code изоляция, OOM/fork/network/filesystem границы и отказ supervisor под нагрузкой здесь не испытаны. Перед открытием приёма обязательны реальный runner smoke и полный Compose-запуск по [развёртыванию](docs/deployment.md) и [матрице приёмки](docs/implementation.md).
 
 ## Структура и контракты
 
