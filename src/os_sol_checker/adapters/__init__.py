@@ -1,1 +1,1 @@
-"""Инфраструктурные реализации портов. Только заготовка, без реализации."""
+"""Infrastructure adapters for Git, PostgreSQL and runner HTTP."""

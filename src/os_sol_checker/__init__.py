@@ -1,1 +1,1 @@
-"""OS-sol-checker: структура будущего пакета; приложение не реализовано. Только заготовка, без реализации."""
+"""Git-backed C solution checker with an isolated nsjail executor."""

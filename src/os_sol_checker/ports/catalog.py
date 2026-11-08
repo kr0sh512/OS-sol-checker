@@ -1,1 +1,8 @@
-"""Будущий контракт immutable catalog snapshots. См. docs/catalog.md. Только заготовка, без реализации."""
+from typing import Protocol
+from ..domain.models import CatalogSnapshot, Task
+
+
+class CatalogSource(Protocol):
+    async def import_snapshot(self, ref: str | None = None) -> CatalogSnapshot: ...
+    def load_snapshot(self, snapshot_id: str) -> CatalogSnapshot: ...
+    def load_test(self, snapshot: CatalogSnapshot, task: Task, index: int) -> tuple[bytes, bytes]: ...

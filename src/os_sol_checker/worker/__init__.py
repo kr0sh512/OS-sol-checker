@@ -1,1 +1,1 @@
-"""Планировщик и жизненный цикл обработчика очереди. Только заготовка, без реализации."""
+"""Singleton queue scheduler and bounded concurrent judging."""

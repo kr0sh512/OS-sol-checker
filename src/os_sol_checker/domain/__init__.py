@@ -1,1 +1,1 @@
-"""Чистые модели и политики предметной области. Только заготовка, без реализации."""
+"""Models and pure checking policies, independent of HTTP and SQL."""

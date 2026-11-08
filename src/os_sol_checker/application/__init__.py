@@ -1,1 +1,1 @@
-"""Сценарии приложения; зависимости только от домена и портов. Только заготовка, без реализации."""
+"""Catalog, submission, judging, archive and session use cases."""

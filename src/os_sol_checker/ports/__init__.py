@@ -1,1 +1,1 @@
-"""Границы между сценариями приложения и инфраструктурой. Только заготовка, без реализации."""
+"""Typed boundaries for catalog, storage, queue and sandbox implementations."""

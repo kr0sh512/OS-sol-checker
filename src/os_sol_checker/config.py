@@ -60,6 +60,8 @@ class Settings(BaseSettings):
         for name in required:
             if not getattr(self, name):
                 raise ValueError(f"{name.upper()} is required for {role}")
+        if role in {"worker", "runner"} and len(self.runner_token.encode()) < 32:
+            raise ValueError("RUNNER_TOKEN must contain at least 32 bytes")
         if role == "web" and not self.public_origin.startswith("https://"):
             raise ValueError("PUBLIC_ORIGIN must use HTTPS")
         if role == "runner" and "@sha256:" not in self.runner_image:
