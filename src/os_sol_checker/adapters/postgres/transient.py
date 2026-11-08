@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import unicodedata
 from contextlib import asynccontextmanager
 from datetime import timedelta
-import unicodedata
 from uuid import UUID, uuid4
 
 from psycopg import AsyncConnection, Error
@@ -12,8 +12,15 @@ from psycopg.types.json import Jsonb
 from ...config import Settings
 from ...domain.errors import CheckerError
 from ...domain.models import (
-    CatalogSnapshot, CheckResult, Failure, JudgeContext, JudgePolicy, QueueJob,
-    SessionProfile, Submission, Task,
+    CatalogSnapshot,
+    CheckResult,
+    Failure,
+    JudgeContext,
+    JudgePolicy,
+    QueueJob,
+    SessionProfile,
+    Submission,
+    Task,
 )
 from ...domain.policies import identify
 from ...domain.verdicts import SubmissionStatus, Verdict
@@ -313,14 +320,14 @@ class TransientStore(PostgresStore):
             await connection.execute(
                 """INSERT INTO submissions(id, session_id, author_name, author_group, task_id, context,
                     generation, policy_digest, sha256, byte_size, source, original_filename, status,
-                    result, proven_result, cache_hit, queue_job_id, started_at, finished_at, expires_at)
+                    result, proven_result, cache_hit, queue_job_id, started_at, finished_at, expires_at, total_tests)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     CASE WHEN %s THEN clock_timestamp() ELSE NULL END,
-                    CASE WHEN %s THEN clock_timestamp() + %s ELSE NULL END)""",
+                    CASE WHEN %s THEN clock_timestamp() + %s ELSE NULL END, %s)""",
                 (submission_id, session_id, profile["name"], profile["group"], task.id, _json(context),
                  context.generation, context.judge_policy_digest, digest, size, source, filename, status.value,
                  _json(result) if result else None, _json(proven) if proven else None, cache_hit,
-                 job_id, started_at, result is not None, result is not None, self.ttl),
+                 job_id, started_at, result is not None, result is not None, self.ttl, len(actual_task.tests)),
             )
             await connection.execute(
                 """INSERT INTO session_last_submissions(session_id, task_id, submission_id) VALUES (%s, %s, %s)
@@ -481,6 +488,17 @@ class TransientStore(PostgresStore):
                 (state["generation"], state["policy_digest"], limit),
             )).fetchall()
             return [_submission(row) for row in rows if _current(state, JudgeContext.model_validate(row["context"]))]
+
+    async def archive_candidate(self, submission_id: UUID) -> Submission | None:
+        """Authorize this attempt now, not when an earlier batch was discovered."""
+        async with self.pool.connection() as connection, connection.transaction():
+            state = await self._state(connection)
+            row = await (await connection.execute(
+                "SELECT * FROM submissions WHERE id = %s AND status = 'archive_pending'", (submission_id,),
+            )).fetchone()
+            if row and _current(state, JudgeContext.model_validate(row["context"])):
+                return _submission(row)
+            return None
 
     async def finish_archived(self, submission_id: UUID) -> None:
         # Called only after the archive transaction committed. This never holds a lock over archive I/O.

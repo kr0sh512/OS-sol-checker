@@ -1,0 +1,38 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "defaultErrnoRet": 1,
+  "architectures": ["SCMP_ARCH_X86_64"],
+  "syscalls": [
+    {
+      "action": "SCMP_ACT_ALLOW",
+      "names": [
+        "read", "write", "readv", "writev", "pread64", "pwrite64", "close", "close_range",
+        "open", "openat", "stat", "fstat", "lstat", "newfstatat", "statx", "statfs", "fstatfs",
+        "lseek", "access", "faccessat", "faccessat2", "getdents", "getdents64", "readlink", "readlinkat",
+        "getcwd", "chdir", "fchdir", "mmap", "mprotect", "munmap", "mremap", "madvise", "brk", "msync",
+        "mincore", "rt_sigaction", "rt_sigprocmask", "rt_sigreturn", "rt_sigpending", "rt_sigtimedwait",
+        "rt_sigsuspend", "sigaltstack", "kill", "tkill", "tgkill", "alarm", "setitimer", "getitimer", "pause",
+        "pipe", "pipe2", "dup", "dup2", "dup3", "fcntl", "ioctl", "poll", "ppoll", "select", "pselect6",
+        "fork", "vfork", "clone", "execve", "execveat", "wait4", "waitid", "exit", "exit_group",
+        "getpid", "getppid", "gettid", "getuid", "geteuid", "getgid", "getegid", "getgroups", "setgroups",
+        "setuid", "setgid", "setreuid", "setregid", "setresuid", "setresgid", "getresuid", "getresgid",
+        "setfsuid", "setfsgid", "getpgrp", "getpgid", "setpgid", "setsid", "getsid", "getpriority", "setpriority",
+        "arch_prctl", "prctl", "seccomp", "capget", "capset", "set_tid_address", "set_robust_list", "get_robust_list",
+        "futex", "futex_waitv", "rseq", "sched_yield", "sched_getaffinity", "sched_setaffinity", "sched_getparam",
+        "sched_getscheduler", "sched_get_priority_max", "sched_get_priority_min", "clock_gettime", "clock_getres",
+        "clock_nanosleep", "nanosleep", "gettimeofday", "time", "getrusage", "times", "getrlimit", "setrlimit",
+        "prlimit64", "sysinfo", "uname", "getrandom", "mkdir", "mkdirat", "rmdir", "unlink", "unlinkat",
+        "rename", "renameat", "renameat2", "link", "linkat", "symlink", "symlinkat", "ftruncate", "truncate",
+        "chmod", "fchmod", "fchmodat", "chown", "fchown", "lchown", "fchownat", "utime", "utimes", "utimensat",
+        "fsync", "fdatasync", "umask", "flock", "fadvise64", "sendfile", "splice", "tee", "vmsplice", "copy_file_range",
+        "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait", "epoll_pwait", "epoll_pwait2", "eventfd", "eventfd2",
+        "signalfd", "signalfd4", "timerfd_create", "timerfd_settime", "timerfd_gettime", "socket", "socketpair",
+        "bind", "listen", "accept", "accept4", "connect", "shutdown", "getsockname", "getpeername", "getsockopt",
+        "setsockopt", "sendto", "recvfrom", "sendmsg", "recvmsg", "sendmmsg", "recvmmsg",
+        "unshare", "mount", "umount2", "pivot_root", "chroot", "sethostname", "setdomainname",
+        "semget", "semop", "semctl", "semtimedop", "shmget", "shmat", "shmdt", "shmctl", "msgget", "msgsnd", "msgrcv", "msgctl"
+      ]
+    },
+    {"action": "SCMP_ACT_ERRNO", "errnoRet": 38, "names": ["clone3"]}
+  ]
+}

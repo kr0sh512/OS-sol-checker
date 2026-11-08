@@ -28,11 +28,12 @@ def failed(verdict: Verdict, total: int, passed: int = 0, *, stage: str = "infra
            test_id: str | None = None, index: int | None = None, outcome: StageOutcome | None = None,
            stdin: bytes | None = None, expected: bytes | None = None) -> CheckResult:
     diagnostics = None
+    failure_stage = "submission" if verdict == Verdict.SUBMISSION_TIMEOUT else stage
     if outcome is not None:
         data = outcome.stderr if stage == "run" else outcome.stdout + outcome.stderr
         diagnostics = preview(data, 8192, truncated=outcome.status == "output_limit") if data else None
     return CheckResult(verdict=verdict, passed_tests=passed, total_tests=total,
-                       first_failure=Failure(stage=stage, code=verdict, message=_MESSAGES[verdict],
+                       first_failure=Failure(stage=failure_stage, code=verdict, message=_MESSAGES[verdict],
                                              test_id=test_id, test_index=index, diagnostics=diagnostics,
                                              stdin_preview=preview(stdin) if stdin is not None else None,
                                              expected_preview=preview(expected) if expected is not None else None,

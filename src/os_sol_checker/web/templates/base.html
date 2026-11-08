@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Проверка решений по ОС{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
-  <script src="{{ url_for('static', path='/app.js') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css').path }}">
+  <script src="{{ url_for('static', path='/app.js').path }}" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Перейти к содержимому</a>
@@ -13,7 +13,7 @@
   <main id="main" class="layout">
     <nav aria-label="Хлебные крошки"><ol class="breadcrumbs">
       <li><a href="/">Темы</a></li>
-      {% if topic %}<li><a href="{{ url_for('topic_page', topic_id=topic.id) }}">{{ topic.title }}</a></li>{% endif %}
+      {% if topic %}<li><a href="{{ url_for('topic_page', topic_id=topic.id).path }}">{{ topic.title }}</a></li>{% endif %}
       {% if task %}<li aria-current="page">{{ task.title }}</li>{% endif %}
     </ol></nav>
     {% block content %}{% endblock %}

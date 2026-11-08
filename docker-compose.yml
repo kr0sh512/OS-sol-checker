@@ -1,78 +1,220 @@
-# НЕ ПРИГОДЕН ДЛЯ ЗАПУСКА: только спецификация будущего Docker Compose.
-# Здесь намеренно нет исполняемых services, images, entrypoints или healthchecks.
-# docker compose config/up сейчас не являются поддерживаемым запуском проекта.
-# Реализация приложения и конфигурации контейнеров ещё отсутствует.
-# Основной контракт: docs/architecture.md, docs/security.md, docs/deployment.md.
-#
-# Целевая топология одного проверенного Linux-хоста:
-# - web, worker, catalog-sync: один application image;
-#   сборка: deploy/containers/application.Dockerfile.
-# - runner: отдельный immutable image с GCC, nsjail и compile/run rootfs;
-#   сборка: deploy/containers/runner.Dockerfile. Строго один экземпляр.
-# - postgres-transient: отдельная временная PostgreSQL, bounded ephemeral tmpfs.
-# - postgres-archive: отдельная PostgreSQL, persistent volume и проверяемый backup.
-# - Один активный worker: PostgreSQL advisory lock, recovery перед claims.
-# - Никакого Docker socket и контейнеров на отдельную посылку.
-#
-# Целевые сети (не все сервисы в одной общей сети):
-# - frontend: только web; доступ через HTTPS reverse proxy оператора.
-#   Если proxy на хосте, backend web публикуется только на loopback хоста.
-# - db-transient (internal): web, worker, catalog-sync, postgres-transient.
-# - db-archive (internal): только worker и postgres-archive.
-# - worker-runner (internal): только worker и runner.
-# - catalog-egress: catalog-sync -> фиксированный upstream GitHub по HTTPS;
-#   отдельные проверенные firewall/egress правила хоста.
-# - Runner и обе БД не публикуют порты на хосте.
-#
-# Целевые mounts и жизненный цикл:
-# - Catalog snapshots volume: catalog-sync writer, web/worker read-only readers.
-# - Runner не видит каталог, БД, expected output или чужие исходники.
-# - Transient PostgreSQL data: bounded tmpfs, без постоянного volume и backup.
-# - Archive PostgreSQL data: отдельный persistent volume, backup/restore.
-# - Runner scratch: приватный bounded tmpfs, не shared volume с worker.
-# - Каждый compile/run: новая jail, отдельный bounded tmpfs и cgroup;
-#   между стадиями только runner хранит приватный артефакт до 1 МиБ.
-#
-# Целевые настройки (это комментарии, не рабочие значения окружения):
-# RUNNER_URL=http://runner:8081
-# RUNNER_TOKEN=  обязательный секрет без default; только worker и runner.
-# RUNNER_IMAGE=  обязательная immutable ссылка по digest, не изменяемый tag.
-# MAX_CONCURRENT_SANDBOXES=4  worker limit + авторитетный semaphore runner.
-# COMPILE_TIMEOUT_SECONDS=10; RUN_TIMEOUT_SECONDS=2.
-# SUBMISSION_DEADLINE_SECONDS=60  включая резервирование, создание и cleanup.
-# MAX_SOURCE_BYTES=102400; MAX_OUTPUT_BYTES=65536 (stdout+stderr до base64).
-# MAX_ARTIFACT_BYTES=1048576; внутренний MAX_TEST_STDIN_BYTES=1048576.
-# SANDBOX_MEMORY_MIB=256; SANDBOX_PIDS_LIMIT=64; SANDBOX_TMP_MIB=32.
-# CPU quota стадии: один CPU; внешний бюджет: N стадий + trusted overhead.
-# Все тела/заголовки API ограничены; policy digests фиксируют лимиты.
-# PUBLIC_ORIGIN, CSRF_SECRET и database credentials обязательны без secrets defaults.
-# Отдельные роли БД для сервисов; archive credentials только worker.
-# Не передавать всему приложению общий env_file со всеми секретами.
-#
-# Предпосылки, которые рабочий Compose должен явно учитывать:
-# - Linux, rootful Docker Engine, Compose plugin, cgroup v2;
-#   версия/профили/минимальные capabilities проверяются на опорном хосте.
-# - Явно делегированное runner поддерево cgroup v2: memory/pids/cpu, cgroup.kill.
-#   Нужна отдельная host provisioning процедура/скрипт при реализации;
-#   нельзя bind-mount весь writable cgroup filesystem хоста.
-# - Новые network/user/PID/mount/IPC/UTS namespaces для каждой jail.
-# - Private PID namespace внешнего контейнера, не host PID namespace.
-# - Supervisor и отдельный watchdog вне jail; при отказе остановить потомков.
-# - Внешние security profiles: deploy/security/runner-seccomp.json,
-#   deploy/security/runner-apparmor.profile; сейчас также заготовки.
-# - Внутренние profiles: deploy/nsjail/compile.cfg и deploy/nsjail/run.cfg.
-# - Не задавать privileged: true, seccomp=unconfined или отключение AppArmor
-#   как defaults; разрешения runner уточняются испытаниями, не обходом защиты.
-# - Внешние memory/PID/CPU/tmpfs limits для runner включают N стадий + overhead;
-#   отдельно ограничить application, PostgreSQL и журналы, оставить резерв ОС.
-# - Web/worker/catalog-sync non-root; секреты и API fd не наследуются jail.
-# - Readiness false без обязательных namespaces/cgroup/профилей; без fallback.
-# - Отмена: cgroup.kill, wait/reap, mount/tmp cleanup; слот только после уборки.
-# - Restart runner теряет handles: infrastructure_error, не слепой повтор.
-# - Plaintext bearer только в приватной сети одного хоста; вне неё нужен
-#   аутентифицированный шифрованный транспорт.
-# - Физическое завершение по deadline best effort при зависшем ядре/хосте.
-#
-# После реализации: docker compose config, затем docker compose up -d,
-# миграции/готовность/recovery и испытания по docs/implementation.md.
-# До этого файл остаётся исключительно comment-only placeholder.
+name: os-sol-checker
+
+x-application: &application
+  image: ${APPLICATION_IMAGE:?Set an immutable application image reference}
+  build:
+    context: .
+    dockerfile: deploy/containers/application.Dockerfile
+  user: "10001:10001"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: ["/tmp:size=64m,mode=1777,nosuid,nodev,noexec"]
+  pids_limit: 64
+  mem_limit: 384m
+  memswap_limit: 384m
+  cpus: 1.0
+  restart: unless-stopped
+  logging: &logging
+    driver: json-file
+    options: {max-size: 10m, max-file: "3"}
+
+services:
+  postgres-transient:
+    image: postgres:17.5-bookworm
+    environment:
+      POSTGRES_USER: checker_owner
+      POSTGRES_DB: checker_transient
+      POSTGRES_PASSWORD_FILE: /run/secrets/transient_owner_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    command: [postgres, -c, max_connections=80, -c, shared_buffers=64MB, -c, temp_file_limit=65536]
+    networks: [db-transient]
+    secrets: [transient_owner_password, web_password, worker_password, catalog_password]
+    volumes: [./deploy/postgres/transient-init.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro]
+    tmpfs: ["/var/lib/postgresql/data:size=1024m,uid=999,gid=999,mode=0700,nosuid,nodev,noexec", "/var/run/postgresql:size=8m,uid=999,gid=999"]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -h 127.0.0.1 -U checker_owner -d checker_transient]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 1536m
+    memswap_limit: 1536m
+    pids_limit: 128
+    cpus: 1.0
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: *logging
+
+  postgres-archive:
+    image: postgres:17.5-bookworm
+    environment:
+      POSTGRES_USER: checker_owner
+      POSTGRES_DB: checker_archive
+      POSTGRES_PASSWORD_FILE: /run/secrets/archive_owner_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    command: [postgres, -c, max_connections=32, -c, shared_buffers=64MB, -c, temp_file_limit=65536]
+    networks: [db-archive]
+    secrets: [archive_owner_password, archive_worker_password]
+    volumes:
+      - archive-data:/var/lib/postgresql/data
+      - ./deploy/postgres/archive-init.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    tmpfs: ["/var/run/postgresql:size=8m,uid=999,gid=999"]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -h 127.0.0.1 -U checker_owner -d checker_archive]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 64
+    cpus: 1.0
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: *logging
+
+  migrate:
+    <<: *application
+    restart: "no"
+    command: [checker-migrate, --web-role, checker_web, --worker-role, checker_worker, --catalog-role, checker_catalog, --archive-role, checker_archive_runtime]
+    environment:
+      CHECKER_SERVICE: migrate
+      TRANSIENT_MIGRATION_DATABASE_URL_FILE: /run/secrets/transient_migration_database_url
+      ARCHIVE_MIGRATION_DATABASE_URL_FILE: /run/secrets/archive_migration_database_url
+    secrets: [transient_migration_database_url, archive_migration_database_url]
+    networks: [db-transient, db-archive]
+    depends_on:
+      postgres-transient: {condition: service_healthy}
+      postgres-archive: {condition: service_healthy}
+
+  web:
+    <<: *application
+    command: [checker-web]
+    environment:
+      CHECKER_SERVICE: web
+      TRANSIENT_DATABASE_URL_FILE: /run/secrets/web_database_url
+      CSRF_SECRET_FILE: /run/secrets/csrf_secret
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set the exact public HTTPS origin}
+      CATALOG_ROOT: /var/lib/checker/catalog
+    secrets: [web_database_url, csrf_secret]
+    networks: [frontend, db-transient]
+    ports: [127.0.0.1:8000:8000]
+    volumes: [catalog:/var/lib/checker/catalog:ro]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  worker:
+    <<: *application
+    command: [checker-worker]
+    environment:
+      CHECKER_SERVICE: worker
+      TRANSIENT_DATABASE_URL_FILE: /run/secrets/worker_database_url
+      ARCHIVE_DATABASE_URL_FILE: /run/secrets/archive_database_url
+      RUNNER_TOKEN_FILE: /run/secrets/runner_token
+      RUNNER_URL: http://runner:8081
+      CATALOG_ROOT: /var/lib/checker/catalog
+      MAX_CONCURRENT_SANDBOXES: "4"
+    secrets: [worker_database_url, archive_database_url, runner_token]
+    networks: [db-transient, db-archive, worker-runner]
+    volumes: [catalog:/var/lib/checker/catalog:ro]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      runner: {condition: service_healthy}
+
+  catalog-sync:
+    <<: *application
+    mem_limit: 1024m
+    memswap_limit: 1024m
+    command: [checker-catalog]
+    environment:
+      CHECKER_SERVICE: catalog
+      TRANSIENT_DATABASE_URL_FILE: /run/secrets/catalog_database_url
+      CATALOG_ROOT: /var/lib/checker/catalog
+      TASKS_REPOSITORY_URL: https://github.com/kr0sh512/OS-tasks
+      TASKS_REPOSITORY_REF: main
+    secrets: [catalog_database_url]
+    networks: [db-transient, catalog-egress]
+    volumes: [catalog:/var/lib/checker/catalog]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+
+  runner:
+    image: ${RUNNER_IMAGE:?Set a published immutable runner image reference}
+    build:
+      context: .
+      dockerfile: deploy/containers/runner.Dockerfile
+    command: [checker-runner]
+    user: "0:0"
+    read_only: true
+    environment:
+      CHECKER_SERVICE: runner
+      RUNNER_TOKEN_FILE: /run/secrets/runner_token
+      RUNNER_IMAGE: ${RUNNER_IMAGE:?Set a published immutable runner image reference}
+      MAX_CONCURRENT_SANDBOXES: "4"
+      NSJAIL_CGROUP_ROOT: /run/checker-cgroup
+    secrets: [runner_token]
+    networks: [worker-runner]
+    cap_drop: [ALL]
+    cap_add: [SYS_ADMIN, SYS_CHROOT, SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER, KILL, SETPCAP]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./deploy/security/runner-seccomp.json
+      - apparmor=checker-runner
+    # Only the outer cgroup namespace is shared to permit controlled migration
+    # into the separately budgeted delegated hierarchy. PID/network remain private.
+    cgroup: host
+    volumes:
+      - type: bind
+        source: ${CHECKER_CGROUP_HOST:?Provision the bounded delegated stage subtree first}
+        target: /run/checker-cgroup
+        bind: {propagation: rprivate, create_host_path: false}
+    tmpfs:
+      - /work/runner:size=160m,mode=0711,nosuid,nodev
+      - /run/user:size=16m,mode=0755,nosuid,nodev
+      - /tmp:size=8m,mode=1777,nosuid,nodev,noexec
+      - /sys/fs/cgroup:size=4k,mode=0555,ro,nosuid,nodev,noexec
+    # Stage processes are charged to the independently bounded delegated cgroup,
+    # NOT this container cgroup after migration. These limits bound trusted control.
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 128
+    cpus: 1.0
+    stop_grace_period: 10s
+    healthcheck:
+      test: [CMD, /opt/checker/.venv/bin/python, /opt/checker/deploy/container_entrypoint.py, checker-runner, --health]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+    logging: *logging
+
+networks:
+  frontend: {}
+  db-transient: {internal: true}
+  db-archive: {internal: true}
+  worker-runner: {internal: true}
+  catalog-egress: {}
+volumes:
+  catalog: {}
+  archive-data: {}
+secrets:
+  transient_owner_password: {file: ./deploy/secrets/transient_owner_password}
+  archive_owner_password: {file: ./deploy/secrets/archive_owner_password}
+  web_password: {file: ./deploy/secrets/web_password}
+  worker_password: {file: ./deploy/secrets/worker_password}
+  catalog_password: {file: ./deploy/secrets/catalog_password}
+  archive_worker_password: {file: ./deploy/secrets/archive_worker_password}
+  web_database_url: {file: ./deploy/secrets/web_database_url}
+  worker_database_url: {file: ./deploy/secrets/worker_database_url}
+  catalog_database_url: {file: ./deploy/secrets/catalog_database_url}
+  archive_database_url: {file: ./deploy/secrets/archive_database_url}
+  transient_migration_database_url: {file: ./deploy/secrets/transient_migration_database_url}
+  archive_migration_database_url: {file: ./deploy/secrets/archive_migration_database_url}
+  csrf_secret: {file: ./deploy/secrets/csrf_secret}
+  runner_token: {file: ./deploy/secrets/runner_token}

@@ -1,8 +1,8 @@
 """Validated, bounded Git data. No working-tree or checkout semantics."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 MAX_BLOB_BYTES = 8 * 1024 * 1024
 MAX_MARKDOWN_BYTES = 1024 * 1024

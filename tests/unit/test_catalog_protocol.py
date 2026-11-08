@@ -1,11 +1,11 @@
-from hashlib import sha1
 import subprocess
 import sys
 import time
+from hashlib import sha1
 
 import pytest
 
-from os_sol_checker.adapters.catalog.git import _Git, _ObjectReader, _import_lock, _publisher_lease
+from os_sol_checker.adapters.catalog.git import _Git, _import_lock, _ObjectReader, _publisher_lease
 from os_sol_checker.adapters.catalog.tree import CatalogError
 
 
@@ -65,8 +65,8 @@ def test_protocol_child_error_and_unrequested_trailing_output_reject_import(tmp_
 
 
 def test_import_lock_serializes_independent_instances(tmp_path):
-    from concurrent.futures import ThreadPoolExecutor
     import threading
+    from concurrent.futures import ThreadPoolExecutor
     entered = threading.Event()
     release = threading.Event()
     order = []
@@ -93,11 +93,9 @@ def test_import_lock_serializes_independent_instances(tmp_path):
 
 
 def test_publisher_lease_prevents_double_sync_and_releases_after_failure(tmp_path):
-    with pytest.raises(RuntimeError, match="publication failure"):
-        with _publisher_lease(tmp_path):
-            with pytest.raises(CatalogError, match="Another catalog publisher"):
-                with _publisher_lease(tmp_path):
-                    pytest.fail("second publisher acquired a live lease")
-            raise RuntimeError("publication failure")
+    with pytest.raises(RuntimeError, match="publication failure"), _publisher_lease(tmp_path):
+        with pytest.raises(CatalogError), _publisher_lease(tmp_path):
+            pytest.fail("second publisher acquired a live lease")
+        raise RuntimeError("publication failure")
     with _publisher_lease(tmp_path):
         pass

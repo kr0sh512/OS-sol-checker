@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
+from psycopg import Error as DatabaseError
 from starlette.responses import JSONResponse
 
 from ..application.sessions import COOKIE_NAME, csrf_token, resolve_session, valid_csrf, validate_profile
 from ..application.submissions import accept_submission, submission_dto
 from ..domain.errors import CheckerError
 from ..domain.verdicts import SubmissionStatus
+from ..ports.storage import SubmissionStore
 from .uploads import media_type, read_bounded, read_upload
 from .views import page, session_cookie
 
@@ -19,6 +22,9 @@ router = APIRouter()
 def get_store(request: Request):
     """Override the store factory before lifespan, or this dependency in isolated tests."""
     return request.app.state.store
+
+
+StoreDependency = Annotated[SubmissionStore, Depends(get_store)]
 
 
 def rate(request: Request, category: str, key: str, limit: int):
@@ -64,7 +70,7 @@ async def catalog(store):
 
 
 @router.get("/api/catalog")
-async def api_catalog(store=Depends(get_store)):
+async def api_catalog(store: StoreDependency):
     snapshot = await catalog(store)
     return {"snapshot_id": snapshot.snapshot_id, "generation": snapshot.generation,
             "topics": [{"id": topic.id, "title": topic.title,
@@ -73,7 +79,7 @@ async def api_catalog(store=Depends(get_store)):
 
 
 @router.get("/api/profile")
-async def get_profile(request: Request, store=Depends(get_store)):
+async def get_profile(request: Request, store: StoreDependency):
     rate(request, "profile-ip", ip(request), 120)
     profile, token = await session(request, store, create=True)
     return session_cookie(JSONResponse(await profile_dto(request, store, profile)), token,
@@ -81,7 +87,7 @@ async def get_profile(request: Request, store=Depends(get_store)):
 
 
 @router.put("/api/profile")
-async def put_profile(request: Request, store=Depends(get_store)):
+async def put_profile(request: Request, store: StoreDependency):
     profile = await mutation_session(request, store)
     rate(request, "profile-write-ip", ip(request), 60)
     rate(request, "profile-write-session", str(profile.id), 30)
@@ -101,11 +107,12 @@ async def put_profile(request: Request, store=Depends(get_store)):
         raise CheckerError("invalid_profile", "Некорректный JSON профиля.", 422) from None
     name, group = validate_profile(value)
     profile = await store.update_profile(profile.id, name, group)
-    return await profile_dto(request, store, profile)
+    return session_cookie(JSONResponse(await profile_dto(request, store, profile)), request.cookies[COOKIE_NAME],
+                          ttl_days=request.app.state.settings.session_ttl_days)
 
 
 @router.post("/api/tasks/{task_id}/submissions")
-async def submit(task_id: str, request: Request, store=Depends(get_store)):
+async def submit(task_id: str, request: Request, store: StoreDependency):
     profile = await mutation_session(request, store)
     rate(request, "upload-ip", ip(request), 60)
     rate(request, "upload-session", str(profile.id), 10)
@@ -115,22 +122,24 @@ async def submit(task_id: str, request: Request, store=Depends(get_store)):
     submission = await accept_submission(store, settings, profile, task_id, source, filename)
     snapshot, policy = await store.current_catalog(), await store.current_policy()
     code = 200 if submission.cache_hit and submission.status == SubmissionStatus.FINISHED else 202
-    return JSONResponse(submission_dto(submission, snapshot, policy), status_code=code,
-                        headers={"Location": f"/api/submissions/{submission.id}"})
+    response = JSONResponse(submission_dto(submission, snapshot, policy), status_code=code,
+                            headers={"Location": f"/api/submissions/{submission.id}"})
+    return session_cookie(response, request.cookies[COOKIE_NAME], ttl_days=settings.session_ttl_days)
 
 
 @router.get("/api/submissions/{submission_id}")
-async def get_submission(submission_id: str, request: Request, store=Depends(get_store)):
+async def get_submission(submission_id: str, request: Request, store: StoreDependency):
     rate(request, "read-ip", ip(request), 600)
     try:
         parsed_id = UUID(submission_id)
     except ValueError:
         raise CheckerError("submission_not_found", "История недоступна.", 404) from None
-    profile, _ = await session(request, store, create=False)
+    profile, token = await session(request, store, create=False)
     submission = await store.get_submission(profile.id, parsed_id) if profile else None
     if submission is None:
         raise CheckerError("submission_not_found", "История недоступна.", 404)
-    return submission_dto(submission, await store.current_catalog(), await store.current_policy())
+    response = JSONResponse(submission_dto(submission, await store.current_catalog(), await store.current_policy()))
+    return session_cookie(response, token, ttl_days=request.app.state.settings.session_ttl_days)
 
 
 async def html_page(request, store, kind, entity_id=None):
@@ -161,17 +170,17 @@ async def html_page(request, store, kind, entity_id=None):
 
 
 @router.get("/")
-async def home(request: Request, store=Depends(get_store)):
+async def home(request: Request, store: StoreDependency):
     return await html_page(request, store, "home")
 
 
 @router.get("/topics/{topic_id}")
-async def topic_page(topic_id: str, request: Request, store=Depends(get_store)):
+async def topic_page(topic_id: str, request: Request, store: StoreDependency):
     return await html_page(request, store, "topic", topic_id)
 
 
 @router.get("/tasks/{task_id}")
-async def task_page(task_id: str, request: Request, store=Depends(get_store)):
+async def task_page(task_id: str, request: Request, store: StoreDependency):
     return await html_page(request, store, "task", task_id)
 
 
@@ -181,10 +190,10 @@ async def live():
 
 
 @router.get("/health/ready")
-async def ready(store=Depends(get_store)):
+async def ready(store: StoreDependency):
     try:
         healthy = (await store.health() and await store.current_catalog() is not None
                    and await store.current_policy() is not None and await store.worker_alive())
-    except Exception:
+    except (OSError, RuntimeError, CheckerError, DatabaseError):
         healthy = False
     return JSONResponse({"status": "ready" if healthy else "not_ready"}, status_code=200 if healthy else 503)

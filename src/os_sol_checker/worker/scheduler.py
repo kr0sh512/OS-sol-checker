@@ -4,10 +4,12 @@ import asyncio
 import logging
 from uuid import UUID
 
+from psycopg import Error as DatabaseError
+
 from ..application.archive import deliver_successes
 from ..application.judging import failed, judge
 from ..config import Settings
-from ..domain.errors import RunnerError
+from ..domain.errors import CheckerError, RunnerError
 from ..domain.models import QueueJob
 from ..domain.verdicts import Verdict
 from ..ports.catalog import CatalogSource
@@ -38,7 +40,7 @@ class Scheduler:
                 await self.store.complete_job(job.id, failed(Verdict.INFRASTRUCTURE_ERROR, job.total_tests))
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except (OSError, ValueError, RuntimeError, CheckerError, DatabaseError):
             logger.error("Job infrastructure failure: %s", job.id)
             await self.store.complete_job(job.id, failed(Verdict.INFRASTRUCTURE_ERROR, job.total_tests))
 
@@ -62,7 +64,7 @@ class Scheduler:
             try:
                 await deliver_successes(self.store, self.archive)
                 backoff = 1
-            except Exception:
+            except (OSError, ValueError, RuntimeError, CheckerError, DatabaseError):
                 logger.warning("Archive delivery pending; no code re-execution")
                 backoff = min(30, backoff * 2)
             await asyncio.sleep(backoff)

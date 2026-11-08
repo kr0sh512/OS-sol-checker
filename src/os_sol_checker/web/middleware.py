@@ -1,6 +1,6 @@
 """Browser security headers and explicitly process-local, bounded abuse controls."""
-from collections import OrderedDict, deque
 import time
+from collections import OrderedDict, deque
 
 from ..domain.errors import CheckerError
 

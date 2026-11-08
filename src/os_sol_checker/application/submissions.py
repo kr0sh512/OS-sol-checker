@@ -38,7 +38,6 @@ async def accept_submission(store, settings, profile, task_id: str, source: byte
 def submission_dto(submission: Submission, snapshot: CatalogSnapshot | None, policy: JudgePolicy | None):
     result = submission.result if submission.status == SubmissionStatus.FINISHED else None
     counters = result or submission.proven_result
-    task = snapshot.task(submission.task_id) if snapshot else None
     stale = (snapshot is None or policy is None
              or snapshot.generation != submission.context.generation
              or snapshot.tests_digest != submission.context.tests_digest
@@ -51,7 +50,7 @@ def submission_dto(submission: Submission, snapshot: CatalogSnapshot | None, pol
         "context": submission.context.model_dump(mode="json"),
         "first_failure": result.first_failure.model_dump(mode="json") if result and result.first_failure else None,
         "passed_tests": counters.passed_tests if counters else 0,
-        "total_tests": counters.total_tests if counters else len(task.tests) if task else 0,
+        "total_tests": counters.total_tests if counters else submission.total_tests,
         "created_at": submission.created_at.isoformat(),
         "finished_at": submission.finished_at.isoformat() if submission.finished_at else None,
         "stale": stale, "state_reason": submission.state_reason,

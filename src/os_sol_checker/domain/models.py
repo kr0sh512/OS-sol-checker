@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from hashlib import sha256
-import json
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -133,6 +133,7 @@ class Submission(Model):
     author_name: str
     author_group: str
     task_id: str
+    total_tests: int = Field(ge=0)
     context: JudgeContext
     sha256: str
     byte_size: int

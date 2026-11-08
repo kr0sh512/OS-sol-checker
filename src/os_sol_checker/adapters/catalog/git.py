@@ -3,13 +3,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from contextlib import contextmanager
 import fcntl
-from hashlib import sha1, sha256
 import json
 import logging
 import os
-from pathlib import Path
 import re
 import selectors
 import shutil
@@ -19,15 +16,33 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
+from hashlib import sha1, sha256
+from pathlib import Path
 from urllib.parse import urlsplit
 
+from psycopg import Error as DatabaseError
+
 from ...config import Settings
+from ...domain.errors import CheckerError
 from ...domain.models import CatalogSnapshot, Task
 from .fingerprint import TestsFingerprint
 from .parser import PARSER_VERSION, REPO_ID, SORT_UNICODE_VERSION, parse_catalog
-from .tree import (CatalogError, MAX_BLOB_BYTES, MAX_DEPTH, MAX_ENTRIES, MAX_EXPECTED_OUTPUT_BYTES,
-                   MAX_MARKDOWN_BYTES, MAX_TEST_STDIN_BYTES, MAX_TOTAL_BYTES, MAX_TREE_BYTES,
-                   OBJECT_ID, TreeEntry, validate_path, validate_tree)
+from .tree import (
+    MAX_BLOB_BYTES,
+    MAX_DEPTH,
+    MAX_ENTRIES,
+    MAX_EXPECTED_OUTPUT_BYTES,
+    MAX_MARKDOWN_BYTES,
+    MAX_TEST_STDIN_BYTES,
+    MAX_TOTAL_BYTES,
+    MAX_TREE_BYTES,
+    OBJECT_ID,
+    CatalogError,
+    TreeEntry,
+    validate_path,
+    validate_tree,
+)
 
 FETCH_TIMEOUT_SECONDS = 60
 COMMAND_TIMEOUT_SECONDS = 10
@@ -57,7 +72,7 @@ def _source_url(value: str) -> str:
 
 
 def _snapshot_identity(commit: str, unicode_version: str = SORT_UNICODE_VERSION) -> str:
-    return sha256("\x00".join((REPO_ID, commit, PARSER_VERSION, unicode_version)).encode()).hexdigest()
+    return sha256(f"{REPO_ID}\x00{commit}\x00{PARSER_VERSION}\x00{unicode_version}".encode()).hexdigest()
 
 
 def _disk_usage(root: Path) -> int:
@@ -465,13 +480,22 @@ class GitCatalog:
         metadata.chmod(0o444)
         # A published tree is append/overwrite protected; only the service owns its parent.
         for directory, _, _ in os.walk(staging, topdown=False):
-            Path(directory).chmod(0o555)
+            if Path(directory) != staging:
+                Path(directory).chmod(0o555)
             directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
             try:
                 os.fsync(directory_fd)
             finally:
                 os.close(directory_fd)
         staging.rename(destination)
+        # Moving across parents updates ".." and needs a writable directory.
+        # No catalog pointer is published until this root is sealed and synced.
+        destination.chmod(0o555)
+        root_fd = os.open(destination, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(root_fd)
+        finally:
+            os.close(root_fd)
         descriptor = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
         try:
             os.fsync(descriptor)
@@ -547,7 +571,7 @@ def main() -> None:
         asyncio.run(_serve(Settings(), once=arguments.once, ref=arguments.ref))
     except KeyboardInterrupt:
         return
-    except Exception:
+    except (OSError, ValueError, RuntimeError, CheckerError, DatabaseError):
         _LOG.exception("Catalog synchronization failed; the last published snapshot is unchanged")
         raise SystemExit(1) from None
 

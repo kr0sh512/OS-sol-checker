@@ -1,1 +1,3 @@
-"""Клиент внутреннего API отдельного runner. Только заготовка, без реализации."""
+from .client import RunnerClient, RunnerError
+
+__all__ = ["RunnerClient", "RunnerError"]

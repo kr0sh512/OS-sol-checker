@@ -1,16 +1,25 @@
-from hashlib import sha1
 import json
 import os
-from pathlib import Path
 import subprocess
 import time
+from hashlib import sha1
+from pathlib import Path
 
 import pytest
 
 from os_sol_checker.adapters.catalog.fingerprint import TestsFingerprint
-from os_sol_checker.adapters.catalog.git import (GitCatalog, MAX_GIT_DISK_BYTES, MAX_GIT_FILE_BYTES,
-                                                 _Git, _ObjectReader, _bounded_read, _read_tree,
-                                                 _snapshot_identity, _source_url, _discard_abandoned_imports)
+from os_sol_checker.adapters.catalog.git import (
+    MAX_GIT_DISK_BYTES,
+    MAX_GIT_FILE_BYTES,
+    GitCatalog,
+    _bounded_read,
+    _discard_abandoned_imports,
+    _Git,
+    _ObjectReader,
+    _read_tree,
+    _snapshot_identity,
+    _source_url,
+)
 from os_sol_checker.adapters.catalog.parser import parse_catalog
 from os_sol_checker.adapters.catalog.tree import CatalogError, TreeEntry
 from os_sol_checker.config import Settings

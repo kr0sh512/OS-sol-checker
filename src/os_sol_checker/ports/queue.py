@@ -1,6 +1,7 @@
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 from uuid import UUID
+
 from ..domain.models import CheckResult, QueueJob, Submission
 from ..domain.verdicts import SubmissionStatus
 

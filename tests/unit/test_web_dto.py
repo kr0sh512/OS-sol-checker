@@ -1,10 +1,18 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 
 from os_sol_checker.application.submissions import submission_dto
-from os_sol_checker.domain.models import CatalogSnapshot, CheckResult, JudgeContext, JudgePolicy, Submission, Task, Topic
+from os_sol_checker.domain.models import (
+    CatalogSnapshot,
+    CheckResult,
+    JudgeContext,
+    JudgePolicy,
+    Submission,
+    Task,
+    Topic,
+)
 from os_sol_checker.domain.verdicts import SubmissionStatus, Verdict
 
 
@@ -13,8 +21,9 @@ def record(status):
         topics=[Topic(id="t", title="Topic", tasks=[Task(id="task", topic_id="t", title="Task", relative_path="private")])])
     policy = JudgePolicy(runner_image_digest="sha256:" + "c" * 64, sandbox_profile_digest="d" * 64, flags_digest="e" * 64)
     submission = Submission(id=uuid4(), session_id=uuid4(), author_name="PRIVATE NAME", author_group="PRIVATE GROUP",
-        task_id="task", context=JudgeContext.create(snapshot, policy), sha256="f" * 64, byte_size=6, source=b"SECRET",
-        original_filename="private.c", created_at=datetime.now(timezone.utc), status=status, queue_position=2)
+        task_id="task", total_tests=7, context=JudgeContext.create(snapshot, policy),
+        sha256="f" * 64, byte_size=6, source=b"SECRET",
+        original_filename="private.c", created_at=datetime.now(UTC), status=status, queue_position=2)
     return submission, snapshot, policy
 
 

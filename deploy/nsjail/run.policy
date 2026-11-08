@@ -1,0 +1,29 @@
+// Fork/pipe/signals/mmap/pthreads are supported; external sockets and namespaces are not.
+ALLOW {
+    read, write, readv, writev, pread64, pwrite64, close, open, openat,
+    stat, fstat, lstat, newfstatat, statfs, fstatfs, lseek, access, faccessat,
+    getdents, getdents64, readlink, readlinkat, getcwd, chdir, fchdir,
+    mmap, mprotect, munmap, mremap, madvise, brk, msync, mincore,
+    rt_sigaction, rt_sigprocmask, rt_sigreturn, rt_sigpending, rt_sigtimedwait,
+    rt_sigsuspend, sigaltstack, kill, tkill, tgkill, alarm, setitimer, getitimer, pause,
+    pipe, pipe2, dup, dup2, dup3, fcntl, ioctl, poll, ppoll, select, pselect6,
+    fork, vfork, execve, wait4, waitid, exit, exit_group,
+    getpid, getppid, gettid, getuid, geteuid, getgid, getegid, getgroups,
+    getpgrp, getpgid, setpgid, setsid, getsid, getpriority, setpriority,
+    arch_prctl, prctl, set_tid_address, set_robust_list, get_robust_list, futex,
+    sched_yield, sched_getaffinity, sched_getparam, sched_getscheduler,
+    sched_get_priority_max, sched_get_priority_min,
+    clock_gettime, clock_getres, clock_nanosleep, nanosleep, gettimeofday, time,
+    getrusage, times, getrlimit, sysinfo, uname, getrandom,
+    mkdir, mkdirat, rmdir, unlink, unlinkat, rename, renameat, link, linkat,
+    symlink, symlinkat, ftruncate, truncate, chmod, fchmod, fchmodat,
+    utime, utimes, utimensat, fsync, fdatasync, umask, fadvise64,
+    sendfile, splice, tee, vmsplice,
+    epoll_create, epoll_create1, epoll_ctl, epoll_wait, epoll_pwait,
+    eventfd, eventfd2, signalfd, signalfd4, timerfd_create, timerfd_settime, timerfd_gettime,
+    semget, semop, semctl, semtimedop, shmget, shmat, shmdt, shmctl, msgget, msgsnd, msgrcv, msgctl
+}
+ALLOW { clone { (flags & 0x7e022080) == 0 } }
+ALLOW { prlimit64 { pid != 1 } }
+ERRNO(38) { clone3, rseq }
+DEFAULT KILL_PROCESS

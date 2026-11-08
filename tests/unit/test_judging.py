@@ -6,8 +6,17 @@ import pytest
 from os_sol_checker.application.judging import judge, outcome_verdict
 from os_sol_checker.domain.errors import RunnerError
 from os_sol_checker.domain.models import (
-    CatalogSnapshot, ExecutionHandle, JudgeContext, JudgePolicy, QueueJob,
-    StageOutcome, Task, TestCase, Topic,
+    CatalogSnapshot,
+    ExecutionHandle,
+    JudgeContext,
+    JudgePolicy,
+    QueueJob,
+    StageOutcome,
+    Task,
+    Topic,
+)
+from os_sol_checker.domain.models import (
+    TestCase as Case,
 )
 from os_sol_checker.domain.verdicts import Verdict
 
@@ -15,7 +24,7 @@ from os_sol_checker.domain.verdicts import Verdict
 class Catalog:
     def __init__(self):
         self.task = Task(id="task", topic_id="topic", title="Task", relative_path="topic/1",
-                         tests=[TestCase(id=str(i), input_path=f"{i}.in", expected_path=f"{i}.out")
+                         tests=[Case(id=str(i), input_path=f"{i}.in", expected_path=f"{i}.out")
                                 for i in range(1, 4)])
         self.snapshot = CatalogSnapshot(snapshot_id="snapshot", commit="a" * 40,
                                         tests_digest="b" * 64, root_path="/unused", generation=1,
@@ -105,3 +114,18 @@ async def test_invalidated_generation_stops_before_next_stage():
 def test_nonzero_exit_does_not_pass_even_if_stdout_matches():
     outcome = StageOutcome(status="completed", exit_code=7, stdout=b"expected")
     assert outcome_verdict(outcome, "run") == Verdict.RUNTIME_ERROR
+
+
+@pytest.mark.asyncio
+async def test_runner_overall_deadline_is_not_reported_as_test_local_timeout():
+    class TimedOutRunner(Runner):
+        async def run(self, handle, artifact, stdin):
+            return StageOutcome(status="submission_timeout", resource_reason="timeout")
+
+    catalog = Catalog()
+    runner = TimedOutRunner([])
+    result = await judge(job(catalog), catalog, runner, current, stage_changed)
+    assert result.verdict == Verdict.SUBMISSION_TIMEOUT
+    assert result.first_failure.stage == "submission"
+    assert result.first_failure.test_id == "1"
+    assert runner.destroyed

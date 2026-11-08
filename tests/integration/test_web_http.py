@@ -1,5 +1,5 @@
 """HTTP boundary tests with explicitly injected storage, never an alternate runtime backend."""
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from uuid import uuid4
 
@@ -8,8 +8,19 @@ from fastapi.testclient import TestClient
 
 from os_sol_checker.application.sessions import COOKIE_NAME
 from os_sol_checker.config import Settings
-from os_sol_checker.domain.models import (CatalogSnapshot, CheckResult, Hint, JudgePolicy, SessionProfile,
-                                         Submission, Task, TestCase, Topic)
+from os_sol_checker.domain.models import (
+    CatalogSnapshot,
+    CheckResult,
+    Hint,
+    JudgePolicy,
+    SessionProfile,
+    Submission,
+    Task,
+    Topic,
+)
+from os_sol_checker.domain.models import (
+    TestCase as Case,
+)
 from os_sol_checker.domain.verdicts import SubmissionStatus, Verdict
 from os_sol_checker.main import create_app
 
@@ -31,7 +42,7 @@ class IsolatedStore:
         task = Task(id=TASK_ID, topic_id="topic", title="Сумма <тест>", relative_path="private/path",
                     description_html="<p>Безопасное условие</p>",
                     hints=[Hint(title="Первая", html="<p>Раз</p>"), Hint(title="Вторая", html="<p>Два</p>")],
-                    tests=[TestCase(id="1", input_path="tests/input", expected_path="tests/secret")])
+                    tests=[Case(id="1", input_path="tests/input", expected_path="tests/secret")])
         self.snapshot = CatalogSnapshot(snapshot_id="snapshot", commit="e" * 40, tests_digest="f" * 64,
                                         root_path="/private", generation=1,
                                         topics=[Topic(id="topic", title="Ввод и вывод", tasks=[task])])
@@ -44,7 +55,7 @@ class IsolatedStore:
     async def current_policy(self): return self.policy
 
     async def create_session(self, token_hash, ttl_days):
-        profile = SessionProfile(id=uuid4(), expires_at=datetime.now(timezone.utc) + timedelta(days=ttl_days))
+        profile = SessionProfile(id=uuid4(), expires_at=datetime.now(UTC) + timedelta(days=ttl_days))
         self.sessions[token_hash] = profile
         return profile
 
@@ -63,8 +74,9 @@ class IsolatedStore:
         profile = next(profile for profile in self.sessions.values() if profile.id == session_id)
         cached = self.next_cached
         submission = Submission(id=uuid4(), session_id=session_id, author_name=profile.name,
-            author_group=profile.group, task_id=task.id, context=context, sha256=sha256(source).hexdigest(),
-            byte_size=len(source), source=source, original_filename=filename, created_at=datetime.now(timezone.utc),
+            author_group=profile.group, task_id=task.id, total_tests=len(task.tests),
+            context=context, sha256=sha256(source).hexdigest(),
+            byte_size=len(source), source=source, original_filename=filename, created_at=datetime.now(UTC),
             status=SubmissionStatus.FINISHED if cached else SubmissionStatus.QUEUED, cache_hit=cached,
             result=CheckResult(verdict=Verdict.WRONG_ANSWER, passed_tests=0, total_tests=1) if cached else None,
             queue_position=None if cached else 1)
@@ -124,7 +136,7 @@ def test_cookie_profile_and_immutable_author_journey(web):
 
 
 def test_foreign_unknown_expired_and_malformed_are_indistinguishable(web):
-    client, store = web
+    client, _store = web
     headers = authenticate(client)
     submitted = client.post(f"/api/tasks/{TASK_ID}/submissions", headers=headers, files={"file": ("a.c", b"x")})
     target = submitted.headers["location"]
@@ -211,3 +223,15 @@ def test_upload_rate_limit_is_session_bounded(web):
                            files={"file": ("a.c", b"")}).status_code == 202
     response = client.post(f"/api/tasks/{TASK_ID}/submissions", headers=headers, files={"file": ("a.c", b"")})
     assert response.status_code == 429 and "retry-after" in response.headers
+
+
+def test_mutations_and_status_reads_refresh_the_valid_session_cookie(web):
+    client, _store = web
+    headers = authenticate(client)
+    changed = client.put("/api/profile", headers=headers, json={"name": "Иван", "group": "ИУ-12"})
+    assert "set-cookie" in changed.headers
+    sent = client.post(f"/api/tasks/{TASK_ID}/submissions", headers=headers, files={"file": ("a.c", b"")})
+    assert "set-cookie" in sent.headers
+    status = client.get(sent.headers["location"])
+    assert "set-cookie" in status.headers
+    assert "Max-Age=2592000" in status.headers["set-cookie"]

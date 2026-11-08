@@ -3,9 +3,18 @@ from hashlib import sha256
 import pytest
 
 from os_sol_checker.adapters.catalog.fingerprint import TestsFingerprint
-from os_sol_checker.adapters.catalog.tree import (CatalogError, MAX_BLOB_BYTES, MAX_COMPONENT_BYTES,
-                                                  MAX_DEPTH, MAX_ENTRIES, MAX_MARKDOWN_BYTES,
-                                                  MAX_PATH_BYTES, TreeEntry, validate_path, validate_tree)
+from os_sol_checker.adapters.catalog.tree import (
+    MAX_BLOB_BYTES,
+    MAX_COMPONENT_BYTES,
+    MAX_DEPTH,
+    MAX_ENTRIES,
+    MAX_MARKDOWN_BYTES,
+    MAX_PATH_BYTES,
+    CatalogError,
+    TreeEntry,
+    validate_path,
+    validate_tree,
+)
 
 
 def test_canonical_fingerprint_includes_directory_mode_path_length_and_bytes():
@@ -82,7 +91,7 @@ def test_duplicate_paths_and_missing_or_file_parents_are_rejected():
 
 def test_blob_markdown_and_entry_count_limits(monkeypatch):
     # Reduced limits exercise exact boundaries without allocating hundreds of MiB.
-    import os_sol_checker.adapters.catalog.tree as tree
+    from os_sol_checker.adapters.catalog import tree
     monkeypatch.setattr(tree, "MAX_BLOB_BYTES", 8)
     monkeypatch.setattr(tree, "MAX_MARKDOWN_BYTES", 4)
     monkeypatch.setattr(tree, "MAX_TOTAL_BYTES", 10)

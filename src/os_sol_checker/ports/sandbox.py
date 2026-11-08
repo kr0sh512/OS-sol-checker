@@ -1,5 +1,6 @@
 from typing import Protocol
 from uuid import UUID
+
 from ..domain.models import ExecutionHandle, JudgePolicy, StageOutcome
 
 

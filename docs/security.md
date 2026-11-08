@@ -2,7 +2,7 @@
 
 ## Статус и модель доверия
 
-Это требования к будущей реализации, а не описание уже работающей защиты. Исходники и профили пока являются заготовками; принимать недоверенные решения до реализации и испытания всех механизмов нельзя. Топология и требования к хосту описаны в [развёртывании](deployment.md), общий контракт — в [архитектуре](architecture.md).
+Runner, API, nsjail profiles, rootfs build, независимый watchdog и внешний PID1 supervisor реализованы. Это не утверждение о пройденном production security smoke: фактическая проверка требует отдельного Linux x86-64 хоста с rootful Docker, enforcing AppArmor и делегированными cgroup v2. Rootless Podman, отсутствие AppArmor/nsjail или cgroup delegation не поддерживаются; runner отказывает закрыто. Топология, команды и честный статус испытаний — в [развёртывании](deployment.md), общий контракт — в [архитектуре](architecture.md).
 
 Worker — доверенный контроллер: он читает выбранный неизменяемый снимок каталога, сравнивает вывод и записывает результаты в БД. Runner — отдельный доверенный сервис с GCC, nsjail и двумя минимальными rootfs. Он получает исходник и stdin только текущего теста, но не читает каталог или БД и не знает ожидаемый вывод. Web и catalog-sync не имеют доступа к управляющему API runner.
 
@@ -54,8 +54,11 @@ Timeout — обязательное решение контроллера ос�
 
 Запросы не могут задавать shell-команды, произвольные пути, argv, env, флаги GCC, mounts, образы или ослабления защиты. `policy_id` выбирает только заранее установленную неизменяемую политику. Runner проверяет её наличие, digest и допустимость, а worker сверяет подтверждённый контекст с контекстом посылки.
 
+`RUNNER_TOKEN` содержит минимум 32 байта. Авторизация выполняется до обработки execution metadata, включая неизвестные маршруты. После резервирования compile/run/delete дополнительно требуют `X-Execution-Handle` (непрозрачный handle из ответа, до 128 ASCII-байт). Этот handle привязан к UUID execution и не заменяется UUID посылки. DELETE неизвестного UUID остаётся 204 после bearer-аутентификации. Приватный bearer даёт worker право list/recovery всех своих executions; web и catalog-sync не получают его.
+
 | Метод и путь | Контракт |
 | --- | --- |
+| `GET /v1/policy` | Аутентифицированный ответ — shared `JudgePolicy` без обёртки. Worker проверяет computed `.digest`, фиксирует policy в transient DB; runner не читает БД. При неготовой изоляции — 503. |
 | `POST /v1/executions` | JSON не больше 4096 байт: UUID посылки `submission_id`, `policy_id`, `remaining_seconds` в диапазоне `(0, 60]`. Runner атомарно проверяет готовность/политику и резервирует один из N слотов на весь execution. Ответ 201: новый UUID `execution_id`, непрозрачный handle, подтверждённые digests/лимиты и оставшийся TTL. UUID и handle связаны с посылкой и текущим жизненным циклом runner. |
 | `POST /v1/executions/{id}/compile` | `Content-Type: application/octet-stream`, raw body исходника не больше 102400 байт; ровно 102400 разрешено. Одна компиляция на execution. Ответ 200 с outcome содержит ограниченные diagnostics и при успехе непрозрачный `artifact_handle`, но не исполняемые байты и не путь к файлу. Артефакт остаётся у runner. |
 | `POST /v1/executions/{id}/run` | `Content-Type: application/octet-stream`, raw body — stdin одного теста, включая любые нулевые и не-UTF-8 байты. `X-Artifact-Handle` длиной не больше 128 ASCII-байт указывает артефакт именно этого execution и submission. Ответ 200 содержит outcome одного теста; разрешены последовательные run после успешной compile. |
@@ -128,4 +131,30 @@ Worker сравнивает stdout с `.out` точно по байтам, вк�
 - [Docker: ограничения ресурсов контейнера](https://docs.docker.com/engine/containers/resource_constraints/).
 - [Linux: cgroup v2, делегирование и cgroup.kill](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html).
 
-Эти ссылки объясняют механизмы, но не подтверждают безопасность ещё не реализованных конфигураций.
+Эти ссылки объясняют механизмы, но не заменяют испытания конкретного образа, ядра и host profiles.
+
+## Реальная цепочка исполнения и проверка политики
+
+`checker-runner` должен быть PID1 приватного PID namespace внешнего контейнера. Он запускает отдельные API и watchdog процессы, контролирует их pipe-heartbeat и при смерти/зависании прекращает обслуживание, убивает всех потомков независимо от process group/session и завершает PID1. Watchdog каждые 10 мс проверяет неизменяемый execution deadline, stage deadline и `memory.events`; первое событие остановки атомарно фиксируется в закрытом registry. HTTP disconnect не отменяет watchdog и не продлевает TTL.
+
+До готовности API проверяет enforcing `checker-runner` AppArmor, seccomp mode 2, `no_new_privs`, конечные aggregate limits делегированного subtree и manifest. Затем действительно исполняет только доверенный заранее собранный `checker-probe` через **оба** nsjail profiles. Probe проверяет различие network/user/PID/mount/IPC/UTS/cgroup namespaces, UID/GID mapping 65534:65534:1, отсутствие supplementary groups/capabilities/лишних fd, read-only корень, отсутствие секретов/cgroups и внешних интерфейсов. Пользовательского C в startup probe нет.
+
+`runner-manifest.json` создаётся при сборке из настоящего nsjail binary, обоих rootfs, trusted jail init/probe и полного дерева nsjail/seccomp profiles. На старте пересчитываются SHA-256 всех файлов, пути, типы, размеры, mode/UID/GID и symlink targets; extra/missing/changed files и небезопасные типы/права отклоняются. nsjail 3.4 закреплён source commit `079d70dda4aa1edd9512cfd25ff1e47e316dc355`; kafel закреплён его gitlink. `RUNNER_IMAGE` обязан иметь `@sha256:<64 lowercase hex>`: это доверенное оператором имя запущенного immutable образа, а не digest, полученный от недоверенного worker. Docker socket ради самопроверки образа не выдаётся.
+
+Trusted stage launcher помещает себя в отдельную ограниченную cgroup **до** exec nsjail и создания jail. Во время подготовки и уборки у execution остаётся слот. `/work` — свежий bounded tmpfs; `/tmp` внутри rootfs ссылается только на `/work/tmp`. Корень jail read-only. Run получает отдельную read-only bind mount только своего файла `/work/main`; исходник, private artifacts, expected и каталоги никогда не монтируются. Контрольная cgroup не монтируется внутрь jail.
+
+Launcher проверяет не только успешную запись: его собственный PID обязан читаться обратно из kernel `cgroup.procs` именно ожидаемого delegated leaf **перед** exec nsjail. Дети наследуют эту membership, nsjail не управляет отдельными cgroups; startup probe дополнительно подтверждает новый cgroup namespace и строго `0::/` в `/proc/self/cgroup`. Ошибка placement либо namespace proof — not-ready, без fallback на другую hierarchy.
+
+Внутри jail `checker-init` сохраняет отдельный status pipe, устанавливает non-dumpable и перед exec закрывает этот fd у недоверенного ребёнка. Только init сообщает доверенному контроллеру START и exit/signal. Чтение `/proc/1/fd` защищено kernel ptrace access check; ptrace/process_vm/pidfd_getfd отсутствуют в allowlist. Stdout/stderr не являются служебным протоколом. Отсутствие trusted completion без структурированного resource stop — infrastructure_error, а не ошибка компиляции по тексту nsjail.
+
+Незагружаемый submitted artifact имеет отдельный доверенный `EXEC_ERROR <errno>` и даёт runtime_error; отказ exec самого GCC/probe — infrastructure_error. `prlimit64` для PID1 запрещён, чтобы ребёнок не менял лимиты monitor. Startup probe не ограничивается унаследованным `Seccomp:2`: forked socket/unshare/ptrace probes должны реально получить SIGSYS под **внутренним** фильтром; проверяются все пять capability sets, точная минимальная среда и невозможность открыть monitor status fd.
+
+Успех outcome называется `completed` (`exit_code=0`, `signal=null`). Остальные статусы: `compile_error`, `runtime_error`, `compile_timeout`, `run_timeout`, `submission_timeout`, `memory_limit`, `output_limit`, `infrastructure_error`. `resource_reason` уточняет `memory`, `pids`, `output`, `artifact`, `timeout` либо `cancelled`; accepted/wrong_answer вычисляет только worker. Достигнутый `pids.max`, который программа сама обработала и завершилась успешно, не превращается в ошибку. `clone3` возвращает ENOSYS, чтобы libc использовала фильтруемый clone; namespace flags в clone запрещены.
+
+API проверяет общий 8192-byte header budget, 4096-byte reservation JSON, source/stdin limits по фактически полученным chunks и monotonic read deadline. HTTP parser также ограничивает незавершённые headers; malformed oversized parser input может быть отклонён до ASGI как HTTP 400. Outcome до 98304 байт, общий stdout+stderr до policy.output_bytes. `RunnerClient` строго декодирует base64, проверяет подтверждённую policy и размеры, не повторяет compile/run. Потерянный reservation response сверяется через list по submission UUID и отменяется, но никогда не вызывает второй POST.
+
+Незавершённый HTTP header ограничен тремя секундами, включая slowloris с постоянными маленькими chunks. Весь ASGI request/response имеет конечный wall budget `submission_deadline_seconds + 10`; при зависшей записи уже начатого ответа соединение закрывается, а stage остаётся под независимым watchdog. В клиенте общий транспортный timeout охватывает всю передачу, не только отдельный read. Из передаваемого remaining budget вычитается целиком ограниченное время доставки reservation (до пяти секунд), не произвольная малая константа.
+
+Artifact читается после cgroup.kill, wait/reap и подтверждённой пустоты cgroup. Фиксированный `main` открывается через directory fd с O_NOFOLLOW/O_NONBLOCK, допускается только regular single-link nonempty file до policy.artifact_bytes. FIFO, symlink, directory, hardlink и oversized output отклоняются без зависания. После copy снимается mount и удаляется stage tmpfs; ошибка cleanup карантинирует execution и выключает readiness. DELETE отвечает 204 только после полной уборки private state.
+
+Кодовые API/FD/artifact tests не доказывают изоляцию. `tests/security/test_runner_isolation.py` выполняет недоверенный C **только** через явно указанный готовый runner API и пропускается без соответствующего opt-in окружения. Реальные namespace/kill/OOM/seccomp/AppArmor и supervisor-failure smoke должен выполнить оператор до открытия приёма решений.

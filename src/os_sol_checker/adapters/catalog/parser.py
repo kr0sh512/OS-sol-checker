@@ -1,17 +1,17 @@
 """Pure parsing of a complete validated Git tree and safe CommonMark fragments."""
 from __future__ import annotations
 
-from hashlib import sha256
-from html import escape
 import re
 import unicodedata
+from hashlib import sha256
+from html import escape
 from urllib.parse import urlsplit
 
-from markdown_it import MarkdownIt
 import nh3
+from markdown_it import MarkdownIt
 
 from ...domain.models import Hint, Task, TestCase, Topic
-from .tree import (MAX_EXPECTED_OUTPUT_BYTES, MAX_TEST_STDIN_BYTES, TreeEntry, validate_tree)
+from .tree import MAX_EXPECTED_OUTPUT_BYTES, MAX_TEST_STDIN_BYTES, TreeEntry, validate_tree
 
 REPO_ID = "https://github.com/kr0sh512/OS-tasks"
 # This version is persisted in the snapshot envelope AND its identity. Changing
@@ -83,7 +83,7 @@ def _inline_text(tokens) -> str:
 def _without_line_ending(line: str) -> str:
     if line.endswith("\r\n"):
         return line[:-2]
-    return line[:-1] if line.endswith("\n") else line
+    return line.removesuffix("\n")
 
 
 def parse_markdown(source: str) -> tuple[str, list[Hint]]:

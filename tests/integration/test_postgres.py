@@ -1,22 +1,31 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass
 from datetime import timedelta
-import os
 from uuid import uuid4
 
 import psycopg
+import pytest
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
-import pytest
 
 from os_sol_checker.adapters.postgres import ArchiveStore, TransientStore
 from os_sol_checker.adapters.postgres.migrate import migrate_database
 from os_sol_checker.config import Settings
 from os_sol_checker.domain.errors import CheckerError
 from os_sol_checker.domain.models import (
-    CatalogSnapshot, CheckResult, Failure, JudgeContext, JudgePolicy, Task, TestCase, Topic,
+    CatalogSnapshot,
+    CheckResult,
+    Failure,
+    JudgeContext,
+    JudgePolicy,
+    Task,
+    Topic,
+)
+from os_sol_checker.domain.models import (
+    TestCase as Case,
 )
 from os_sol_checker.domain.policies import identify
 from os_sol_checker.domain.verdicts import SubmissionStatus, Verdict
@@ -24,7 +33,7 @@ from os_sol_checker.domain.verdicts import SubmissionStatus, Verdict
 
 def catalog(*, digest="1" * 64, snapshot_id="snapshot-1", title="Task"):
     task = Task(id="topic/task", topic_id="topic", title=title, relative_path="topic/task",
-                tests=[TestCase(id="1", input_path="tests/1.dat", expected_path="tests/1.ans")])
+                tests=[Case(id="1", input_path="tests/1.dat", expected_path="tests/1.ans")])
     return CatalogSnapshot(snapshot_id=snapshot_id, commit="a" * 40, tests_digest=digest,
                            root_path="/catalog/immutable", topics=[Topic(id="topic", title="Topic", tasks=[task])])
 
@@ -116,7 +125,7 @@ async def test_concurrent_duplicate_accepts_one_job_and_own_author(databases):
     for author, item in zip(authors, submissions, strict=True):
         assert item.author_name == author.name and item.author_group == author.group
         assert await db.transient.get_submission(authors[(authors.index(author) + 1) % len(authors)].id, item.id) is None
-        assert await db.transient.last_submissions(author.id) == [dict(task_id=db.task.id, id=item.id, available=True)]
+        assert await db.transient.last_submissions(author.id) == [{"task_id": db.task.id, "id": item.id, "available": True}]
 
 
 async def test_capacity_is_global_across_store_pools_and_rejection_preserves_last_pointer(databases):
@@ -215,7 +224,7 @@ async def test_success_followers_and_cache_hits_need_individual_archive_receipts
             "(SELECT count(*) FROM success_receipts) AS receipts"
         )).fetchone()
         receipt = await (await connection.execute("SELECT * FROM success_receipts WHERE submission_id = %s", (cached.id,))).fetchone()
-    assert counts == dict(blobs=1, solutions=1, receipts=4)
+    assert counts == {"blobs": 1, "solutions": 1, "receipts": 4}
     assert receipt["author_name"] == authors[2].name and receipt["context"] == cached.context.model_dump(mode="json")
 
 
@@ -301,7 +310,7 @@ async def test_result_ttl_preserves_session_and_unavailable_last_pointer(databas
         await connection.execute("UPDATE result_cache SET expires_at = clock_timestamp() - interval '1 second'")
     assert await db.transient.get_submission(author.id, submission.id) is None
     await db.transient.cleanup()
-    assert await db.transient.last_submissions(author.id) == [dict(task_id=db.task.id, id=submission.id, available=False)]
+    assert await db.transient.last_submissions(author.id) == [{"task_id": db.task.id, "id": submission.id, "available": False}]
     assert (await db.transient.update_profile(author.id, "Still here", "Group")).name == "Still here"
     async with db.transient.pool.connection() as connection:
         row = await (await connection.execute("SELECT count(*) AS n FROM queue_jobs")).fetchone()
@@ -517,7 +526,7 @@ async def test_service_roles_allow_real_flows_but_deny_cross_role_mutation(datab
                 await connection.execute("UPDATE checker_state SET generation = generation + 1")
         published = await catalog_store.publish_catalog(catalog(digest="8" * 64, snapshot_id="role-catalog"))
         assert published.generation == db.snapshot.generation + 1
-        assert await web.last_submissions(author.id) == [dict(task_id=db.task.id, id=submitted.id, available=False)]
+        assert await web.last_submissions(author.id) == [{"task_id": db.task.id, "id": submitted.id, "available": False}]
         async with catalog_store.pool.connection() as connection:
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 await connection.execute("SELECT source FROM submissions")
@@ -581,7 +590,7 @@ async def test_archive_survives_result_ttl_and_transient_cleanup(databases):
         await connection.execute("UPDATE result_cache SET expires_at = clock_timestamp() - interval '1 second'")
     await db.transient.cleanup()
     assert await db.transient.get_submission(author.id, submitted.id) is None
-    assert await db.transient.last_submissions(author.id) == [dict(task_id=db.task.id, id=submitted.id, available=False)]
+    assert await db.transient.last_submissions(author.id) == [{"task_id": db.task.id, "id": submitted.id, "available": False}]
     async with db.archive.pool.connection() as connection:
         historical = await (await connection.execute(
             "SELECT r.context, r.author_name, b.source FROM success_receipts r "
@@ -612,3 +621,55 @@ async def test_acceptance_rechecks_profile_and_task_with_no_partial_pointer(data
             JudgeContext.create(published, db.policy), b"", "empty.c", 1)
     assert (inactive.value.code, inactive.value.status_code) == ("task_inactive", 409)
     assert await db.transient.last_submissions(author.id) == []
+
+
+async def test_archive_batch_does_not_start_new_attempts_after_invalidation(databases):
+    from os_sol_checker.application.archive import deliver_successes
+
+    db = databases
+    author = await db.author()
+    first, second = await db.accept(author), await db.accept(author)
+    async with db.transient.scheduler_lock():
+        job = await db.transient.claim_job()
+        await db.transient.complete_job(job.id, success())
+    entered, resume = asyncio.Event(), asyncio.Event()
+
+    class DelayedArchive:
+        async def record_success(self, submission):
+            if submission.id == first.id:
+                entered.set()
+                await resume.wait()
+            await db.archive.record_success(submission)
+
+    delivery = asyncio.create_task(deliver_successes(db.transient, DelayedArchive()))
+    await entered.wait()
+    await db.transient.publish_catalog(catalog(digest="7" * 64, snapshot_id="changed-tests"))
+    resume.set()
+    await delivery
+    async with db.archive.pool.connection() as connection:
+        rows = await (await connection.execute("SELECT submission_id FROM success_receipts")).fetchall()
+    assert {row["submission_id"] for row in rows} == {first.id}
+    assert second.id not in {row["submission_id"] for row in rows}
+
+
+async def test_invalidated_cache_hit_preserves_its_frozen_test_count(databases):
+    from os_sol_checker.application.submissions import submission_dto
+
+    db = databases
+    author = await db.author()
+    await db.accept(author)
+    async with db.transient.scheduler_lock():
+        job = await db.transient.claim_job()
+        [pending] = await db.transient.complete_job(job.id, success())
+    await db.archive.record_success(pending)
+    await db.transient.finish_archived(pending.id)
+    cached = await db.accept(author)
+    assert cached.queue_job_id is None
+    newer = catalog(digest="8" * 64, snapshot_id="more-tests")
+    newer.topics[0].tasks[0].tests.append(Case(id="2", input_path="2.in", expected_path="2.out"))
+    published = await db.transient.publish_catalog(newer)
+    invalidated = await db.transient.get_submission(author.id, cached.id)
+    assert invalidated.status == SubmissionStatus.INVALIDATED
+    response = submission_dto(invalidated, published, db.policy)
+    assert response["generation"] == cached.context.generation
+    assert response["total_tests"] == 1

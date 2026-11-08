@@ -2,9 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from os_sol_checker.adapters.catalog.parser import (entity_id, natural_key, parse_catalog, parse_markdown)
-from os_sol_checker.adapters.catalog.tree import (MAX_EXPECTED_OUTPUT_BYTES, MAX_TEST_STDIN_BYTES,
-                                                  TreeEntry)
+from os_sol_checker.adapters.catalog.parser import entity_id, natural_key, parse_catalog, parse_markdown
+from os_sol_checker.adapters.catalog.tree import MAX_EXPECTED_OUTPUT_BYTES, MAX_TEST_STDIN_BYTES, TreeEntry
 
 
 def task_tree(extra: list[TreeEntry] | None = None) -> list[TreeEntry]:

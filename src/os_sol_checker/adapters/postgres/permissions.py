@@ -7,9 +7,9 @@ WEB_GRANTS = (
     ("SELECT", "checker_state"), ("SELECT", "sessions"), ("SELECT", "session_last_submissions"),
     ("SELECT", "queue_jobs"), ("SELECT", "submissions"), ("SELECT", "result_cache"),
     ("INSERT", "sessions"), ("INSERT", "queue_jobs"), ("INSERT", "session_last_submissions"),
-    ("INSERT (id, session_id, author_name, author_group, task_id, context, generation, policy_digest, "
+    (("INSERT (id, session_id, author_name, author_group, task_id, context, generation, policy_digest, "
      "sha256, byte_size, source, original_filename, created_at, started_at, finished_at, expires_at, "
-     "status, result, proven_result, cache_hit, queue_job_id, state_reason)", "submissions"),
+     "status, result, proven_result, cache_hit, queue_job_id, state_reason, total_tests)"), "submissions"),
     ('UPDATE (name, "group", token_hash, last_seen_at, expires_at)', "sessions"),
     ("UPDATE (submission_id, updated_at)", "session_last_submissions"),
     ("DELETE", "session_last_submissions"),
@@ -60,7 +60,7 @@ async def grant_roles(connection, kind: str, runtime_role: str | None, *,
         raise ValueError("web, worker and catalog roles must be distinct")
     # Explicitly revoke old column grants too: REVOKE ALL ON TABLE alone doesn't remove those.
     columns = await (await connection.execute(
-        """SELECT table_name, array_agg(column_name ORDER BY ordinal_position) AS names
+        """SELECT table_name, array_agg(column_name::text ORDER BY ordinal_position) AS names
            FROM information_schema.columns WHERE table_schema = %s GROUP BY table_name""", (schema,),
     )).fetchall()
     for role_name, grants in permissions:

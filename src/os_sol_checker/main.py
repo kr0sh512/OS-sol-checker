@@ -31,7 +31,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             or origin.path or origin.query or origin.fragment):
         raise ValueError("PUBLIC_ORIGIN must be an exact HTTPS origin without path or credentials")
     try:
-        origin.port
+        _ = origin.port
     except ValueError:
         raise ValueError("PUBLIC_ORIGIN has an invalid port") from None
 

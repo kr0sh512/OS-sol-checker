@@ -1,8 +1,7 @@
-from hashlib import sha256
 import unicodedata
+from hashlib import sha256
 
 from .models import Preview
-
 
 GCC_FLAGS = (
     "-std=gnu17", "-O2", "-pipe", "-Wall", "-Wextra", "-Wformat=2",

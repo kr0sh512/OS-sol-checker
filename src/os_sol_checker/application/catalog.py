@@ -5,6 +5,9 @@ import asyncio
 import logging
 from typing import Protocol
 
+from psycopg import Error as DatabaseError
+
+from ..domain.errors import CheckerError
 from ..domain.models import CatalogSnapshot
 
 _LOG = logging.getLogger(__name__)
@@ -52,7 +55,7 @@ class CatalogSynchronizer:
                 snapshot = await self.sync(ref)
                 _LOG.info("Published catalog commit=%s generation=%s tests_digest=%s",
                           snapshot.commit, snapshot.generation, snapshot.tests_digest)
-            except Exception:
+            except (OSError, ValueError, RuntimeError, CheckerError, DatabaseError):
                 _LOG.exception("Catalog import/publication failed; keeping last complete snapshot (commit=%s)",
                                self.last_attempt_commit or "unknown")
             await asyncio.sleep(self.poll_seconds)
