@@ -9,23 +9,30 @@ from ..domain.verdicts import SubmissionStatus
 async def accept_submission(store, settings, profile, task_id: str, source: bytes, filename: str):
     if not profile.name or not profile.group:
         raise CheckerError("profile_required", "Сначала заполните имя и группу.", 422)
-    snapshot = await store.current_catalog()
-    if snapshot is None:
-        raise CheckerError("catalog_unavailable", "Каталог заданий пока недоступен.", 503)
-    task = snapshot.task(task_id)
-    if task is None:
-        raise CheckerError("task_not_found", "Задание не найдено.", 404)
-    if not task.availability:
-        raise CheckerError("task_inactive", "Задание недоступно для проверки.", 409)
-    policy = await store.current_policy()
-    if policy is None:
-        raise CheckerError("storage_unavailable", "Проверка пока не готова. Попробуйте позднее.", 503)
-    if len(source) > policy.limits.source_bytes:
-        error = CheckerError("source_too_large", "Файл превышает лимит политики проверки.", 413)
-        error.limit_bytes = policy.limits.source_bytes
-        raise error
-    return await store.accept_submission(profile.id, task, JudgeContext.create(snapshot, policy),
-                                         source, filename, settings.queue_capacity)
+    # A context race rolls back acceptance completely; no UUID was published yet.
+    for _ in range(3):
+        snapshot = await store.current_catalog()
+        if snapshot is None:
+            raise CheckerError("catalog_unavailable", "Каталог заданий пока недоступен.", 503)
+        task = snapshot.task(task_id)
+        if task is None:
+            raise CheckerError("task_not_found", "Задание не найдено.", 404)
+        if not task.availability:
+            raise CheckerError("task_inactive", "Задание недоступно для проверки.", 409)
+        policy = await store.current_policy()
+        if policy is None:
+            raise CheckerError("storage_unavailable", "Проверка пока не готова. Попробуйте позднее.", 503)
+        if len(source) > policy.limits.source_bytes:
+            error = CheckerError("source_too_large", "Файл превышает лимит политики проверки.", 413)
+            error.limit_bytes = policy.limits.source_bytes
+            raise error
+        try:
+            return await store.accept_submission(profile.id, task, JudgeContext.create(snapshot, policy),
+                                                 source, filename, settings.queue_capacity)
+        except CheckerError as error:
+            if error.code != "stale_context":
+                raise
+    raise CheckerError("stale_context", "Контекст проверки изменяется. Повторите отправку.", 503)
 
 
 def submission_dto(submission: Submission, snapshot: CatalogSnapshot | None, policy: JudgePolicy | None):

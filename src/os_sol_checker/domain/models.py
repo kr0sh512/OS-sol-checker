@@ -154,6 +154,7 @@ class QueueJob(Model):
     id: UUID
     submission_id: UUID
     task_id: str
+    total_tests: int = Field(ge=1)
     context: JudgeContext
     source: bytes = Field(exclude=True)
 

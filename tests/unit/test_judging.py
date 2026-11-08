@@ -54,7 +54,7 @@ class Runner:
 def job(catalog):
     policy = JudgePolicy(runner_image_digest="sha256:" + "c" * 64,
                          sandbox_profile_digest="d" * 64, flags_digest="e" * 64)
-    return QueueJob(id=uuid4(), submission_id=uuid4(), task_id="task", source=b"source",
+    return QueueJob(id=uuid4(), submission_id=uuid4(), task_id="task", source=b"source", total_tests=3,
                     context=JudgeContext.create(catalog.snapshot, policy))
 
 

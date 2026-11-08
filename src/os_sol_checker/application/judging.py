@@ -52,7 +52,7 @@ def outcome_verdict(outcome: StageOutcome, stage: str) -> Verdict | None:
 async def judge(job: QueueJob, catalog: CatalogSource, runner: SandboxBackend,
                 is_current: Callable[[], Awaitable[bool]],
                 stage_changed: Callable[[SubmissionStatus], Awaitable[None]]) -> CheckResult:
-    total = 0
+    total = job.total_tests
     deadline = time.monotonic() + job.context.limits.submission_deadline_seconds
     handle = None
     passed = 0
@@ -61,9 +61,8 @@ async def judge(job: QueueJob, catalog: CatalogSource, runner: SandboxBackend,
         async with asyncio.timeout_at(deadline):
             snapshot = await asyncio.to_thread(catalog.load_snapshot, job.context.snapshot_id)
             task = snapshot.task(job.task_id)
-            if task is None or not task.availability or not task.tests:
-                return failed(Verdict.INFRASTRUCTURE_ERROR, 0)
-            total = len(task.tests)
+            if task is None or not task.availability or len(task.tests) != total:
+                return failed(Verdict.INFRASTRUCTURE_ERROR, total)
             if not await is_current():
                 raise asyncio.CancelledError
             policy = JudgePolicy.model_validate(job.context.model_dump(include=set(JudgePolicy.model_fields)))

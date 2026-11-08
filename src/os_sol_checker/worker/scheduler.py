@@ -35,12 +35,12 @@ class Scheduler:
             if exc.status_code == 429:
                 await self.store.requeue_job(job.id)
             else:
-                await self.store.complete_job(job.id, failed(Verdict.INFRASTRUCTURE_ERROR, 0))
+                await self.store.complete_job(job.id, failed(Verdict.INFRASTRUCTURE_ERROR, job.total_tests))
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.error("Job infrastructure failure: %s", job.id)
-            await self.store.complete_job(job.id, failed(Verdict.INFRASTRUCTURE_ERROR, 0))
+            await self.store.complete_job(job.id, failed(Verdict.INFRASTRUCTURE_ERROR, job.total_tests))
 
     async def heartbeat(self) -> None:
         while not self.stop.is_set():

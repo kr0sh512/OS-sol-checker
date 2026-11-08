@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     session_ttl_days: int = Field(default=30, gt=0)
     runner_scratch: Path = Path("/work/runner")
     nsjail_binary: str = "/usr/local/bin/nsjail"
-    nsjail_cgroup_root: Path = Path("/sys/fs/cgroup/checker")
+    nsjail_cgroup_root: Path = Path("/run/checker-cgroup")
     jail_profiles_root: Path = Path("/opt/checker/deploy/nsjail")
     jail_rootfs_root: Path = Path("/opt/checker/rootfs")
     runner_manifest: Path = Path("/opt/checker/runner-manifest.json")

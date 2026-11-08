@@ -1,1 +1,6 @@
-"""Независимые адаптеры временной БД и постоянного архива. Только заготовка, без реализации."""
+"""Transactional PostgreSQL repositories for transient state and immutable successes."""
+
+from .archive import ArchiveStore
+from .transient import TransientStore
+
+__all__ = ["ArchiveStore", "TransientStore"]
