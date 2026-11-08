@@ -19,6 +19,8 @@ profile checker-runner flags=(attach_disconnected,mediate_deleted) {
   capability setpcap,
   signal (send, receive) peer=checker-runner,
   signal (receive) peer=unconfined,
+  # Docker 29's confined runtime must still be able to stop PID1.
+  signal (receive) peer=runc,
   / r,
   /opt/checker/ r,
   /opt/checker/** rix,
@@ -42,6 +44,7 @@ profile checker-runner flags=(attach_disconnected,mediate_deleted) {
   /etc/nsswitch.conf r,
   /etc/hosts r,
   /etc/resolv.conf r,
+  /etc/ssl/certs/ca-certificates.crt r,
   /usr/include/** r,
   /checker-init rix,
   /checker-probe rix,
@@ -52,6 +55,8 @@ profile checker-runner flags=(attach_disconnected,mediate_deleted) {
   /work/** rwlk,
   /tmp/ rw,
   /tmp/** rwlk,
+  # nsjail walks absolute staging paths using directory fds.
+  /run/ r,
   /run/user/ rw,
   /run/user/** rwlk,
   /run/secrets/ r,
@@ -68,6 +73,7 @@ profile checker-runner flags=(attach_disconnected,mediate_deleted) {
   /run/checker-cgroup/** rw,
   mount options in (rw, ro, remount, bind, rbind, nosuid, nodev, noexec, relatime) /opt/checker/rootfs/** -> /run/user/**,
   mount options in (rw, ro, remount, bind, rbind, nosuid, nodev, noexec, relatime) /work/runner/** -> /run/user/**,
+  mount options in (rw, ro, remount, bind, rbind, nosuid, nodev, noexec, relatime) -> /work/,
   mount options in (rw, ro, remount, bind, rbind, nosuid, nodev, noexec, relatime) -> /work/**,
   mount fstype=tmpfs -> /work/runner/**,
   mount fstype=tmpfs -> /run/user/**,

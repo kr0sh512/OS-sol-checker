@@ -12,6 +12,11 @@ RUN git init && git remote add origin https://github.com/google/nsjail.git \
     && git fetch --depth 1 origin 079d70dda4aa1edd9512cfd25ff1e47e316dc355 \
     && git checkout --detach FETCH_HEAD && git submodule update --init --recursive \
     && make -j2
+COPY sandbox/check_policies.c /build/check_policies.c
+COPY deploy/nsjail/*.policy /build/policies/
+RUN gcc-12 -std=gnu17 -O2 -Wall -Wextra -Werror -I/build/nsjail/kafel/include \
+       /build/check_policies.c /build/nsjail/kafel/libkafel.a -o /build/check-policies \
+    && /build/check-policies /build/policies/compile.policy /build/policies/run.policy
 COPY sandbox/jail_init.c sandbox/jail_probe.c /build/
 RUN gcc-12 -std=gnu17 -O2 -Wall -Wextra -Werror -fPIE -pie -Wl,-z,relro,-z,now \
        /build/jail_init.c -o /build/checker-init \

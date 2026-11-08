@@ -20,7 +20,9 @@ def copy_file(source: Path, root: Path) -> None:
         alias = root / str(source).lstrip("/")
         alias.parent.mkdir(parents=True, exist_ok=True)
         if not alias.exists() and not alias.is_symlink():
-            alias.symlink_to(os.path.relpath(destination, alias.parent))
+            # /lib is already a symlink to usr/lib in the jail. Compute the
+            # target relative to the actual parent, not the lexical /lib path.
+            alias.symlink_to(os.path.relpath(destination.resolve(), alias.parent.resolve()))
 
 
 def dependencies(binary: Path, root: Path) -> None:
@@ -81,7 +83,10 @@ def main() -> None:
     # No device nodes, setuid files, package manager, shell, Python, CA certificates or secrets.
     for root in (compile_root, run_root):
         for path in [root, *root.rglob("*")]:
-            if not path.is_symlink():
+            if path.is_symlink():
+                if path != root / "tmp" and not path.exists():
+                    raise ValueError(f"Broken immutable rootfs symlink: {path}")
+            else:
                 path.chmod(0o555 if path.is_dir() or os.access(path, os.X_OK) else 0o444)
 
 

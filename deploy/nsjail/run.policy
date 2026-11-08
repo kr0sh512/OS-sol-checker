@@ -1,7 +1,11 @@
 // Fork/pipe/signals/mmap/pthreads are supported; external sockets and namespaces are not.
+// Pinned kafel uses kernel names; these numbers are the x86-64 Linux ABI.
+#define clone3 435
+#define rseq 334
+#define faccessat2 439
 ALLOW {
     read, write, readv, writev, pread64, pwrite64, close, open, openat,
-    stat, fstat, lstat, newfstatat, statfs, fstatfs, lseek, access, faccessat,
+    newstat, newfstat, newlstat, newfstatat, statfs, fstatfs, lseek, access, faccessat, faccessat2,
     getdents, getdents64, readlink, readlinkat, getcwd, chdir, fchdir,
     mmap, mprotect, munmap, mremap, madvise, brk, msync, mincore,
     rt_sigaction, rt_sigprocmask, rt_sigreturn, rt_sigpending, rt_sigtimedwait,
@@ -14,16 +18,16 @@ ALLOW {
     sched_yield, sched_getaffinity, sched_getparam, sched_getscheduler,
     sched_get_priority_max, sched_get_priority_min,
     clock_gettime, clock_getres, clock_nanosleep, nanosleep, gettimeofday, time,
-    getrusage, times, getrlimit, sysinfo, uname, getrandom,
+    getrusage, times, getrlimit, sysinfo, newuname, getrandom,
     mkdir, mkdirat, rmdir, unlink, unlinkat, rename, renameat, link, linkat,
     symlink, symlinkat, ftruncate, truncate, chmod, fchmod, fchmodat,
     utime, utimes, utimensat, fsync, fdatasync, umask, fadvise64,
-    sendfile, splice, tee, vmsplice,
+    sendfile64, splice, tee, vmsplice,
     epoll_create, epoll_create1, epoll_ctl, epoll_wait, epoll_pwait,
     eventfd, eventfd2, signalfd, signalfd4, timerfd_create, timerfd_settime, timerfd_gettime,
     semget, semop, semctl, semtimedop, shmget, shmat, shmdt, shmctl, msgget, msgsnd, msgrcv, msgctl
 }
-ALLOW { clone { (flags & 0x7e022080) == 0 } }
+ALLOW { clone { (clone_flags & 0x7e022080) == 0 } }
 ALLOW { prlimit64 { pid != 1 } }
 ERRNO(38) { clone3, rseq }
 DEFAULT KILL_PROCESS

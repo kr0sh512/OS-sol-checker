@@ -68,6 +68,15 @@ Runner запускается только в подготовленном ис�
 
 **Не запускать недоверенные посылки на неподготовленном хосте.** Runner обязан отказывать при неподходящих namespaces/cgroups/security profiles. Rootful Linux и необходимые привилегии не возникают автоматически от наличия Compose-файла. Не включать `privileged: true`, unconfined-профили или доступ к Docker socket как обход ошибки запуска.
 
+## Развёртывание hs-hel
+
+`https://os.krosh.dev` запущен через Compose на hs-hel. Реальные compile/run,
+11 opt-in проверок песочницы, аварийные остановки supervisor-компонентов,
+восстановление transient, browser end-to-end и restore архива выполнены.
+Результаты, исправления и **ограничение общего хоста вместо выделенной VM**:
+[операционный отчёт](docs/operations-hs-hel.md). Манифесты host/ingress находятся
+в `~/Docs/k8s`, а не в альтернативном оркестраторе приложения.
+
 ## Проверки
 
 ```sh
@@ -98,7 +107,7 @@ uv run pytest tests/integration/test_postgres.py
 - Оба Dockerfile успешно собраны через rootless Podman. `docker compose config` разобран поставщиком Podman Compose 1.6.0; полный Compose stack на rootful Docker здесь не поднимался.
 - Собранный runner в неподготовленном rootless-контейнере объявил execution disabled: аутентифицированные `/health` и валидное резервирование вернули `503`, список executions пуст. Fallback не использовался.
 
-**Граница проверки:** на этом хосте нет поддерживаемого rootful Docker/AppArmor/delegated-cgroup окружения. Настоящие compile/run, hostile-code изоляция, OOM/fork/network/filesystem границы и отказ supervisor под нагрузкой здесь не испытаны. Перед открытием приёма обязательны реальный runner smoke и полный Compose-запуск по [развёртыванию](docs/deployment.md) и [матрице приёмки](docs/implementation.md).
+**Граница исходной интеграции:** на исходном development-хосте нет поддерживаемого rootful Docker/AppArmor/delegated-cgroup окружения; приведённые выше исходные проверки сами по себе не подтверждали production sandbox. Затем отдельное реальное развёртывание и испытания выполнены на hs-hel: см. [операционный отчёт](docs/operations-hs-hel.md), включая оставшийся риск общего хоста. При новом развёртывании повторять [приёмку](docs/implementation.md), а не переносить результат автоматически.
 
 ## Структура и контракты
 

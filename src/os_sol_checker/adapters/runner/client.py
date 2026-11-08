@@ -12,20 +12,12 @@ import httpx
 from pydantic import ValidationError
 
 from ...config import Settings
+from ...domain.errors import RunnerError
 from ...domain.models import ExecutionHandle, JudgePolicy, StageOutcome
 
 OUTCOME_BYTES = 98304
 STATUSES = frozenset({"completed", "compile_error", "runtime_error", "compile_timeout", "run_timeout",
                       "submission_timeout", "memory_limit", "output_limit", "infrastructure_error"})
-
-
-class RunnerError(Exception):
-    """An unsuccessful or ambiguous runner operation; never automatically retry it."""
-
-    def __init__(self, code: str, message: str = "Runner operation failed", status_code: int = 503):
-        super().__init__(message)
-        self.code = code
-        self.status_code = status_code
 
 
 class RunnerClient:

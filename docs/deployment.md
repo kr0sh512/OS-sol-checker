@@ -3,9 +3,10 @@
 ## Поставка и честный статус
 
 В репозитории реализованы Dockerfiles, Compose, role bootstrap, host provisioning,
-runner API, nsjail executor, watchdog и PID1 supervisor. Это не сертификат защиты:
-production namespace/cgroup/AppArmor/security smoke в окружении разработки **не
-выполнялся**. Rootless Podman, отсутствие enforcing AppArmor и отсутствие nsjail на
+runner API, nsjail executor, watchdog и PID1 supervisor. Это не сертификат защиты.
+Реальное развёртывание hs-hel и выполненные namespace/cgroup/AppArmor/security smoke
+описаны в [операционном отчёте](operations-hs-hel.md), вместе с оставшимся риском
+общего хоста. В исходном окружении разработки production smoke не выполнялся. Rootless Podman, отсутствие enforcing AppArmor и отсутствие nsjail на
 хосте разработки не подтверждают работоспособность production sandbox. Образ сам
 содержит nsjail; без требуемого runtime runner остаётся неготовым, native fallback нет.
 

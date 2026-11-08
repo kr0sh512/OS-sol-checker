@@ -518,6 +518,10 @@ async def test_service_roles_allow_real_flows_but_deny_cross_role_mutation(datab
             await worker.finish_archived(pending.id)
             await worker.worker_heartbeat()
             await worker.cleanup()
+        assert await web.worker_alive()
+        async with web.pool.connection() as connection:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                await connection.execute("UPDATE worker_status SET heartbeat_at = clock_timestamp()")
         assert (await web.get_submission(author.id, submitted.id)).result.verdict == Verdict.ACCEPTED
         async with web.pool.connection() as connection:
             with pytest.raises(psycopg.errors.InsufficientPrivilege):

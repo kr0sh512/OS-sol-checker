@@ -112,6 +112,12 @@ class _Git:
                             "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_TERMINAL_PROMPT": "0",
                             "GIT_ASKPASS": "/bin/false", "GIT_ALLOW_PROTOCOL": "https",
                             "GIT_NO_REPLACE_OBJECTS": "1", "GIT_ATTR_NOSYSTEM": "1"}
+        # The deployment may make the catalog network internal and permit GitHub
+        # only through an allowlisted HTTPS CONNECT proxy. Preserve just these
+        # operator-owned proxy settings, never the full service environment.
+        for name in ("HTTPS_PROXY", "https_proxy"):
+            if os.environ.get(name):
+                self.environment[name] = os.environ[name]
 
     def start(self, arguments: list[str]) -> subprocess.Popen:
         return subprocess.Popen(self.prefix + arguments, cwd=self.repository,

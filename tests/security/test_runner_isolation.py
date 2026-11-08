@@ -79,8 +79,10 @@ int main(void) {
     assert outcome.status == "completed", outcome
 
 
-async def test_runner_real_network_syscall_is_not_authorized():
-    source = b"#include <sys/socket.h>\nint main(void){ return socket(AF_INET,SOCK_STREAM,0)>=0 ? 0 : 1; }"
+@pytest.mark.parametrize("family", ["AF_INET", "AF_INET6"])
+async def test_runner_real_network_syscall_is_not_authorized(family):
+    source = ("#include <sys/socket.h>\nint main(void){ return socket("
+              + family + ",SOCK_STREAM,0)>=0 ? 0 : 1; }").encode()
     _, outcome = await check(source)
     assert outcome.status == "runtime_error"
     assert outcome.signal == 31  # SIGSYS from the inner default-KILL_PROCESS policy.
@@ -137,3 +139,45 @@ async def test_runner_real_artifact_limit_is_not_an_unbounded_binary_channel():
     _, outcome = await check(source)
     assert outcome.status == "compile_error"
     assert outcome.artifact_handle is None
+
+
+async def test_runner_real_root_readonly_and_scratch_tmpfs_bounded():
+    source = br'''
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+int main(void) {
+    if(open("/etc/passwd",O_WRONLY)>=0) return 1;
+    if(open("/usr/bin/injected",O_CREAT|O_WRONLY,0600)>=0) return 2;
+    int fd=open("/work/fill",O_CREAT|O_WRONLY,0600); if(fd<0)return 3;
+    char data[4096]={0}; unsigned long bytes=0;
+    while(bytes<40UL*1024*1024) {
+        int n=write(fd,data,sizeof data);
+        if(n<0) return errno==ENOSPC && bytes<=32UL*1024*1024 ? 0 : 4;
+        bytes+=n;
+    }
+    return 5;
+}
+'''
+    _, outcome = await check(source)
+    assert outcome.status == "completed", outcome
+
+
+async def test_runner_real_global_reservation_limit():
+    from os_sol_checker.domain.errors import RunnerError
+
+    client = RunnerClient(Settings(runner_url=os.environ["RUNNER_SECURITY_URL"],
+                                   runner_token=os.environ["RUNNER_SECURITY_TOKEN"]))
+    handles = []
+    try:
+        policy = await client.policy()
+        assert not await client.executions()
+        for _ in range(4):
+            handles.append(await client.open(uuid4(), policy, 30))
+        with pytest.raises(RunnerError) as error:
+            await client.open(uuid4(), policy, 30)
+        assert error.value.status_code == 429
+    finally:
+        for handle in handles:
+            await client.destroy(handle)
+        await client.close()

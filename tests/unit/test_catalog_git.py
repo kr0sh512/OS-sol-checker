@@ -26,6 +26,16 @@ from os_sol_checker.config import Settings
 from os_sol_checker.domain.models import CatalogSnapshot
 
 
+def test_git_preserves_only_operator_https_proxy_from_service_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("HTTPS_PROXY", "http://catalog-proxy:3128")
+    monkeypatch.setenv("RUNNER_TOKEN", "not-a-real-token")
+    monkeypatch.setenv("TRANSIENT_DATABASE_URL", "must-not-reach-git")
+    git = _Git(tmp_path, time.monotonic() + 10)
+    assert git.environment["HTTPS_PROXY"] == "http://catalog-proxy:3128"
+    assert "RUNNER_TOKEN" not in git.environment
+    assert "TRANSIENT_DATABASE_URL" not in git.environment
+
+
 @pytest.fixture
 def object_repository(tmp_path):
     """Local Git is only an object-parser fixture, never a production fetch source."""

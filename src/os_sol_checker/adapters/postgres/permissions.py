@@ -6,6 +6,7 @@ from psycopg import sql
 WEB_GRANTS = (
     ("SELECT", "checker_state"), ("SELECT", "sessions"), ("SELECT", "session_last_submissions"),
     ("SELECT", "queue_jobs"), ("SELECT", "submissions"), ("SELECT", "result_cache"),
+    ("SELECT (heartbeat_at)", "worker_status"),
     ("INSERT", "sessions"), ("INSERT", "queue_jobs"), ("INSERT", "session_last_submissions"),
     (("INSERT (id, session_id, author_name, author_group, task_id, context, generation, policy_digest, "
      "sha256, byte_size, source, original_filename, created_at, started_at, finished_at, expires_at, "

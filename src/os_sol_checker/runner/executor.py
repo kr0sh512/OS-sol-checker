@@ -107,6 +107,12 @@ class RunnerExecutor:
                 raise ValueError("The enforcing checker-runner AppArmor profile is required")
             if ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
                 raise OSError(ctypes.get_errno(), "Cannot enable subreaping")
+            # Docker's masked /proc submounts prevent a nested user namespace from
+            # mounting its own procfs. Mount a clean procfs for this PRIVATE outer
+            # PID namespace; AppArmor still allows writes only to UID/GID maps.
+            # Do not disable Docker systempaths, AppArmor, seccomp or PID isolation.
+            await self._command("/usr/bin/mount", "-t", "proc", "-o",
+                                "rw,nosuid,nodev,noexec", "proc", "/proc")
             self.settings.runner_scratch.mkdir(mode=0o711, parents=True, exist_ok=True)
             if not any(line.split(" - ")[1].split()[0] == "tmpfs" and
                        line.split()[4] == str(self.settings.runner_scratch)

@@ -1,7 +1,11 @@
 // x86-64 only. No mount/namespace/ptrace/kernel-control/network syscall authority.
+// Pinned kafel uses kernel names (newstat, etc.); newer calls need exact ABI numbers.
+#define clone3 435
+#define rseq 334
+#define faccessat2 439
 ALLOW {
     read, write, readv, writev, pread64, pwrite64, close, open, openat,
-    stat, fstat, lstat, newfstatat, statfs, fstatfs, lseek, access, faccessat,
+    newstat, newfstat, newlstat, newfstatat, statfs, fstatfs, lseek, access, faccessat, faccessat2,
     getdents, getdents64, readlink, readlinkat, getcwd, chdir, fchdir,
     mmap, mprotect, munmap, mremap, madvise, brk, msync, mincore,
     rt_sigaction, rt_sigprocmask, rt_sigreturn, rt_sigpending, rt_sigtimedwait,
@@ -14,13 +18,13 @@ ALLOW {
     sched_yield, sched_getaffinity, sched_getparam, sched_getscheduler,
     sched_get_priority_max, sched_get_priority_min,
     clock_gettime, clock_getres, clock_nanosleep, nanosleep, gettimeofday, time,
-    getrusage, times, getrlimit, sysinfo, uname, getrandom,
+    getrusage, times, getrlimit, sysinfo, newuname, getrandom,
     mkdir, mkdirat, rmdir, unlink, unlinkat, rename, renameat, link, linkat,
     symlink, symlinkat, ftruncate, truncate, chmod, fchmod, fchmodat,
     utime, utimes, utimensat, fsync, fdatasync, umask, fadvise64,
-    sendfile, splice, tee, vmsplice
+    sendfile64, splice, tee, vmsplice
 }
-ALLOW { clone { (flags & 0x7e022080) == 0 } }
+ALLOW { clone { (clone_flags & 0x7e022080) == 0 } }
 // PID1 is the trusted non-dumpable status monitor, not a student-controlled parent.
 ALLOW { prlimit64 { pid != 1 } }
 // Modern libc falls back to the inspectable clone syscall; no clone3 struct-pointer loophole.
