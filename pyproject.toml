@@ -4,13 +4,32 @@ build-backend = "hatchling.build"
 
 [project]
 name = "os-sol-checker"
-version = "0.0.0"
-description = "Structure and specification for an isolated C solution checker"
+version = "0.1.0"
+description = "Isolated C solution checker with a Git task catalog"
 readme = "README.md"
 requires-python = ">=3.12"
-# No implementation dependencies yet. Select and lock them when implementing
-# the stack specified in docs/architecture.md; this is not a runnable service.
-dependencies = []
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn>=0.34,<1", "pydantic-settings>=2.7,<3",
+  "psycopg[binary,pool]>=3.2,<4", "jinja2>=3.1,<4", "markdown-it-py>=3,<5",
+  "nh3>=0.2,<1", "httpx>=0.28,<1", "python-multipart>=0.0.20,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pytest-asyncio>=0.25,<2", "ruff>=0.11,<1"]
+
+[project.scripts]
+checker-web = "os_sol_checker.main:main"
+checker-worker = "os_sol_checker.worker.main:main"
+checker-catalog = "os_sol_checker.adapters.catalog.git:main"
+checker-runner = "os_sol_checker.runner.main:main"
+checker-migrate = "os_sol_checker.adapters.postgres.migrate:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/os_sol_checker"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
