@@ -4,35 +4,64 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Проверка решений по ОС{% endblock %}</title>
+  <script src="{{ url_for('static', path='/js/theme.js').path }}"></script>
   <link rel="stylesheet" href="{{ url_for('static', path='/app.css').path }}">
-  <script src="{{ url_for('static', path='/app.js').path }}" defer></script>
+  <script type="module" src="{{ url_for('static', path='/js/main.js').path }}"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Перейти к содержимому</a>
-  <header class="site-header"><a href="/">Практикум по операционным системам</a><span>Проверка решений на C</span></header>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+          <path d="m7 9 3 3-3 3M13 15h4"></path>
+        </svg>
+        <span>Практикум по операционным системам</span>
+      </a>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Тёмная тема" aria-pressed="false">
+        <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"></path>
+        </svg>
+        <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"></path>
+        </svg>
+        <span class="theme-toggle-text" aria-hidden="true">Тема</span>
+      </button>
+    </div>
+  </header>
   <main id="main" class="layout">
-    <nav aria-label="Хлебные крошки"><ol class="breadcrumbs">
-      <li><a href="/">Темы</a></li>
-      {% if topic %}<li><a href="{{ url_for('topic_page', topic_id=topic.id).path }}">{{ topic.title }}</a></li>{% endif %}
-      {% if task %}<li aria-current="page">{{ task.title }}</li>{% endif %}
-    </ol></nav>
+    <nav class="breadcrumb-nav" aria-label="Хлебные крошки">
+      <ol class="breadcrumbs">
+        <li><a href="/">Темы</a></li>
+        {% if topic %}<li><a href="{{ url_for('topic_page', topic_id=topic.id).path }}">{{ topic.title }}</a></li>{% endif %}
+        {% if task %}<li aria-current="page">{{ task.title }}</li>{% endif %}
+      </ol>
+    </nav>
     {% block content %}{% endblock %}
     {% if profile %}
     <section class="panel profile" aria-labelledby="profile-title">
-      <h2 id="profile-title">Ваш профиль</h2>
+      <div class="section-heading">
+        <h2 id="profile-title">Ваш профиль</h2>
+        <p>Данные хранятся в cookie для отслеживания отправок.</p>
+      </div>
       <form id="profile-form">
         <div class="form-grid">
           <label for="name">Имя<input id="name" name="name" value="{{ profile.name or '' }}" maxlength="120" required autocomplete="name"></label>
           <label for="group">Группа<input id="group" name="group" value="{{ profile.group or '' }}" maxlength="64" required autocomplete="off"></label>
         </div>
-        <button id="save-profile" type="submit" disabled>Сохранить профиль</button>
+        <div class="form-actions">
+          <button id="save-profile" type="submit" disabled>Сохранить профиль</button>
+        </div>
       </form>
-      <p>Имя и группа не удостоверяются. Успешный код сохраняется в закрытом постоянном архиве.</p>
-      <p id="profile-message" role="status" aria-live="polite">Загрузка профиля…</p>
+      <p id="profile-message" class="form-message" role="status" aria-live="polite">Загрузка профиля…</p>
     </section>
     {% endif %}
     <noscript><p class="notice">Для сохранения профиля, отправки и обновления результата включите JavaScript. Условия и подсказки доступны без него.</p></noscript>
   </main>
-  <footer>Один файл .c. Изолированная проверка. Результат привязан к версии тестов и политики.</footer>
+  <footer class="site-footer">
+    <div class="footer-inner">Для подсосников. С любовью.</div>
+  </footer>
 </body>
 </html>

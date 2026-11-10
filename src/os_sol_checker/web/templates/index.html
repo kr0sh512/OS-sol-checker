@@ -1,11 +1,19 @@
 {% extends 'base.html' %}
 {% block title %}Темы — Практикум по ОС{% endblock %}
 {% block content %}
-<h1>Темы практикума</h1>
-<p class="lede">Выберите тему, затем задание. Условия и подсказки открываются до отправки решения.</p>
+<header class="page-heading">
+  <p class="eyebrow">Каталог практикума</p>
+  <h1>Темы практикума</h1>
+  <p class="lede">Выберите тему и задание.</p>
+</header>
 <ul class="cards">
 {% for item in snapshot.topics %}
-  <li><a href="{{ url_for('topic_page', topic_id=item.id).path }}"><h2>{{ item.title }}</h2><span>{{ item.tasks | length }} заданий →</span></a></li>
-{% else %}<li>В опубликованном каталоге пока нет тем.</li>{% endfor %}
+  <li class="card">
+    <a href="{{ url_for('topic_page', topic_id=item.id).path }}">
+      <h2>{{ item.title }}</h2>
+      <span class="card-meta">{{ item.tasks | length }} заданий <span class="card-arrow" aria-hidden="true">→</span></span>
+    </a>
+  </li>
+{% else %}<li class="empty-state">В опубликованном каталоге пока нет тем.</li>{% endfor %}
 </ul>
 {% endblock %}

@@ -1,15 +1,22 @@
-<section class="panel" aria-labelledby="result-title">
-  <h2 id="result-title">Последняя посылка</h2>
-  <p id="result-status" role="status" aria-live="polite">Загрузка истории…</p>
-  <div id="result-content" hidden>
-    <label for="submission-id">UUID посылки<input id="submission-id" readonly aria-describedby="copy-help"></label>
-    <p id="copy-help">UUID можно выделить и скопировать.</p>
-    <p id="result-cache"></p>
-    <p id="result-counts"></p>
-    <p id="result-context"></p>
+<section class="panel result-panel" aria-labelledby="result-title">
+  <div class="section-heading">
+    <h2 id="result-title">Последняя посылка</h2>
+  </div>
+  <p id="result-status" class="result-status" role="status" aria-live="polite">Загрузка истории…</p>
+  <div id="result-content" class="result-content" hidden>
+    <div class="submission-reference">
+      <label for="submission-id">UUID посылки<input id="submission-id" readonly aria-describedby="copy-help"></label>
+      <p id="copy-help" class="help-text">UUID можно выделить и скопировать.</p>
+    </div>
+    <div class="result-summary">
+      <p id="result-cache"></p>
+      <p id="result-counts"></p>
+      <p id="result-context"></p>
+    </div>
     <p id="result-stale" class="notice" hidden>Результат устарел. Выберите файл и отправьте решение заново; автоматического запуска не будет.</p>
-    <section id="first-failure" hidden aria-labelledby="failure-title">
-      <h3 id="failure-title">Первое нарушение</h3><p id="failure-message"></p>
+    <section id="first-failure" class="failure" hidden aria-labelledby="failure-title">
+      <h3 id="failure-title">Первое нарушение</h3>
+      <p id="failure-message"></p>
       <div id="failure-previews"></div>
     </section>
   </div>

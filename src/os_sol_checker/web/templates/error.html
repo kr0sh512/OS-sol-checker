@@ -1,3 +1,10 @@
 {% extends 'base.html' %}
 {% block title %}{{ title }} — Практикум по ОС{% endblock %}
-{% block content %}<h1>{{ title }}</h1><p class="notice">{{ message }}</p><p><a href="/">Вернуться к темам</a></p>{% endblock %}
+{% block content %}
+<header class="page-heading">
+  <p class="eyebrow">Практикум по ОС</p>
+  <h1>{{ title }}</h1>
+</header>
+<p class="notice">{{ message }}</p>
+<p><a class="button-link button-secondary" href="/">Вернуться к темам</a></p>
+{% endblock %}

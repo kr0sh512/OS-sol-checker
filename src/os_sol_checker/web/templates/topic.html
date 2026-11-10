@@ -1,12 +1,18 @@
 {% extends 'base.html' %}
 {% block title %}{{ topic.title }} — Практикум по ОС{% endblock %}
 {% block content %}
-<h1>{{ topic.title }}</h1>
+<header class="page-heading">
+  <p class="eyebrow">Тема</p>
+  <h1>{{ topic.title }}</h1>
+</header>
 <ul class="cards">
 {% for item in topic.tasks %}
-  <li><a href="{{ url_for('task_page', task_id=item.id).path }}"><h2>{{ item.title }}</h2>
-    {% if item.availability %}<span>Открыть задание →</span>{% else %}<span class="unavailable">Недоступно: {{ item.reason or 'Проверка отключена' }}</span>{% endif %}
-  </a></li>
-{% else %}<li>В этой теме пока нет заданий.</li>{% endfor %}
+  <li class="card">
+    <a href="{{ url_for('task_page', task_id=item.id).path }}">
+      <h2>{{ item.title }}</h2>
+      {% if item.availability %}<span class="card-meta">Открыть задание <span class="card-arrow" aria-hidden="true">→</span></span>{% else %}<span class="card-meta unavailable">Недоступно: {{ item.reason or 'Проверка отключена' }}</span>{% endif %}
+    </a>
+  </li>
+{% else %}<li class="empty-state">В этой теме пока нет заданий.</li>{% endfor %}
 </ul>
 {% endblock %}

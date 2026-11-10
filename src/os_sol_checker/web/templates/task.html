@@ -2,20 +2,27 @@
 {% block title %}{{ task.title }} — Практикум по ОС{% endblock %}
 {% block content %}
 <article id="task" data-task-id="{{ task.id }}" data-available="{{ 'true' if task.availability else 'false' }}">
-  <h1>{{ task.title }}</h1>
-  <section class="statement" aria-label="Условие задания">{{ task.description_html | safe }}</section>
+  <header class="page-heading">
+    <p class="eyebrow">Задание</p>
+    <h1>{{ task.title }}</h1>
+  </header>
+  <section class="statement content-card" aria-label="Условие задания">{{ task.description_html | safe }}</section>
   {% if task.hints %}<section class="hints" aria-labelledby="hints-title"><h2 id="hints-title">Подсказки</h2>
   {% for hint in task.hints %}<details><summary>{{ hint.title }}</summary><div class="statement">{{ hint.html | safe }}</div></details>{% endfor %}
   </section>{% endif %}
   {% if not task.availability %}<p class="notice">Задание недоступно: {{ task.reason or 'Проверка отключена' }}</p>{% endif %}
   <section class="panel" aria-labelledby="submit-title">
-    <h2 id="submit-title">Отправить решение</h2>
+    <div class="section-heading">
+      <h2 id="submit-title">Отправить решение</h2>
+    </div>
     <form id="upload-form">
       <label for="source-file">Файл .c<input id="source-file" name="file" type="file" accept=".c" required {% if not task.availability %}disabled{% endif %} aria-describedby="upload-help"></label>
-      <p id="upload-help">Один файл .c, до 102400 байт включительно. Сначала заполните профиль ниже. Перед отправкой профиль сохранится автоматически.</p>
-      <button id="submit-source" type="submit" disabled>Отправить</button>
+      <p id="upload-help" class="help-text">Файл .c, до 100 Кбайт. Сперва заполните профиль ниже.</p>
+      <div class="form-actions">
+        <button id="submit-source" type="submit" disabled>Отправить</button>
+      </div>
     </form>
-    <p id="upload-message" role="status" aria-live="polite"></p>
+    <p id="upload-message" class="form-message" role="status" aria-live="polite"></p>
   </section>
   {% include 'submission.html' %}
 </article>
