@@ -1,4 +1,4 @@
-"""Public web process. This role never constructs a runner or archive connection."""
+"""Public web process with transient storage and read-only admin archive access."""
 from __future__ import annotations
 
 import argparse
@@ -15,9 +15,10 @@ from starlette.responses import JSONResponse
 from starlette.staticfiles import StaticFiles
 
 from .adapters.catalog.git import GitCatalog
-from .adapters.postgres.transient import TransientStore
+from .adapters.postgres import AdminArchiveStore, TransientStore
 from .config import Settings
 from .domain.errors import CheckerError
+from .web.admin import router as admin_router
 from .web.middleware import LocalRateLimiter, SecurityHeadersMiddleware
 from .web.routes import router
 from .web.views import page
@@ -38,10 +39,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         store = app.state.store_factory(settings)
+        admin_store = app.state.admin_store_factory(settings)
         app.state.store = store
+        app.state.admin_store = admin_store
         try:
             await store.open()
-            yield
+            try:
+                await admin_store.open()
+                yield
+            finally:
+                await admin_store.close()
         finally:
             await store.close()
 
@@ -49,10 +56,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                   redoc_url=None, openapi_url=None)
     app.state.settings = settings
     app.state.store_factory = TransientStore
+    app.state.admin_store_factory = AdminArchiveStore
     app.state.catalog = GitCatalog(settings)
     app.state.rate_limiter = LocalRateLimiter()
     app.add_middleware(SecurityHeadersMiddleware)
     app.include_router(router)
+    app.include_router(admin_router)
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "web" / "static"), name="static")
 
     @app.exception_handler(CheckerError)

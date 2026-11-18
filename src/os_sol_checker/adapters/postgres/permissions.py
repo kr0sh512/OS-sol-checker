@@ -40,20 +40,25 @@ ARCHIVE_TABLES = ("blobs", "accepted_solutions", "success_receipts")
 
 
 async def grant_roles(connection, kind: str, runtime_role: str | None, *,
-                      web_role: str | None, worker_role: str | None, catalog_role: str | None) -> None:
+                      web_role: str | None, worker_role: str | None, catalog_role: str | None,
+                      admin_role: str | None) -> None:
     schema = (await (await connection.execute("SELECT current_schema() AS name")).fetchone())["name"]
     schema_id = sql.Identifier(schema)
     await connection.execute(sql.SQL("REVOKE CREATE ON SCHEMA {} FROM PUBLIC").format(schema_id))
     await connection.execute(sql.SQL("REVOKE ALL ON ALL TABLES IN SCHEMA {} FROM PUBLIC").format(schema_id))
+    if kind == "transient" and admin_role:
+        raise ValueError("admin read-only role can only target archive")
     if kind == "archive" and any((web_role, worker_role, catalog_role)):
         raise ValueError("service-specific transient roles cannot target archive")
-    if runtime_role and any((web_role, worker_role, catalog_role)):
+    if kind == "transient" and runtime_role and any((web_role, worker_role, catalog_role)):
         raise ValueError("choose either a broad transient role or distinct service roles")
     permissions = []
     if runtime_role:
         tables = TRANSIENT_TABLES if kind == "transient" else ARCHIVE_TABLES
         privilege = "SELECT, INSERT, UPDATE, DELETE" if kind == "transient" else "SELECT, INSERT"
         permissions.append((runtime_role, tuple((privilege, table) for table in tables)))
+    if admin_role:
+        permissions.append((admin_role, tuple(("SELECT", table) for table in ARCHIVE_TABLES)))
     permissions.extend((role, grants) for role, grants in (
         (web_role, WEB_GRANTS), (worker_role, WORKER_GRANTS), (catalog_role, CATALOG_GRANTS),
     ) if role)

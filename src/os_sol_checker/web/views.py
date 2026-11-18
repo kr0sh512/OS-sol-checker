@@ -14,5 +14,6 @@ def session_cookie(response, token: str, *, ttl_days: int = 30):
     return response
 
 
-def page(request, template, *, status_code=200, **context):
-    return templates.TemplateResponse(request=request, name=template, context=context, status_code=status_code)
+def page(request, template, *, status_code=200, headers=None, **context):
+    return templates.TemplateResponse(request=request, name=template, context=context, status_code=status_code,
+                                      headers=headers)

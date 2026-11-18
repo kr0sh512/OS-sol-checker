@@ -190,9 +190,10 @@ async def live():
 
 
 @router.get("/health/ready")
-async def ready(store: StoreDependency):
+async def ready(request: Request, store: StoreDependency):
     try:
-        healthy = (await store.health() and await store.current_catalog() is not None
+        healthy = (await store.health() and await request.app.state.admin_store.health()
+                   and await store.current_catalog() is not None
                    and await store.current_policy() is not None and await store.worker_alive())
     except (OSError, RuntimeError, CheckerError, DatabaseError):
         healthy = False

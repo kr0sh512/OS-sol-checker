@@ -55,7 +55,7 @@ services:
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
     command: [postgres, -c, max_connections=32, -c, shared_buffers=64MB, -c, temp_file_limit=65536]
     networks: [db-archive]
-    secrets: [archive_owner_password, archive_worker_password]
+    secrets: [archive_owner_password, archive_worker_password, archive_admin_password]
     volumes:
       - archive-data:/var/lib/postgresql/data
       - ./deploy/postgres/archive-init.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
@@ -76,7 +76,7 @@ services:
   migrate:
     <<: *application
     restart: "no"
-    command: [checker-migrate, --web-role, checker_web, --worker-role, checker_worker, --catalog-role, checker_catalog, --archive-role, checker_archive_runtime]
+    command: [checker-migrate, --web-role, checker_web, --worker-role, checker_worker, --catalog-role, checker_catalog, --archive-role, checker_archive_runtime, --admin-role, checker_admin]
     environment:
       CHECKER_SERVICE: migrate
       TRANSIENT_MIGRATION_DATABASE_URL_FILE: /run/secrets/transient_migration_database_url
@@ -93,11 +93,13 @@ services:
     environment:
       CHECKER_SERVICE: web
       TRANSIENT_DATABASE_URL_FILE: /run/secrets/web_database_url
+      ADMIN_ARCHIVE_DATABASE_URL_FILE: /run/secrets/admin_archive_database_url
+      ADMIN_PASSWORD_FILE: /run/secrets/admin_password
       CSRF_SECRET_FILE: /run/secrets/csrf_secret
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set the exact public HTTPS origin}
       CATALOG_ROOT: /var/lib/checker/catalog
-    secrets: [web_database_url, csrf_secret]
-    networks: [frontend, db-transient]
+    secrets: [web_database_url, admin_archive_database_url, admin_password, csrf_secret]
+    networks: [frontend, db-transient, db-archive]
     ports: [127.0.0.1:8000:8000]
     volumes: [catalog:/var/lib/checker/catalog:ro]
     depends_on:
@@ -210,10 +212,13 @@ secrets:
   worker_password: {file: ./deploy/secrets/worker_password}
   catalog_password: {file: ./deploy/secrets/catalog_password}
   archive_worker_password: {file: ./deploy/secrets/archive_worker_password}
+  archive_admin_password: {file: ./deploy/secrets/archive_admin_password}
   web_database_url: {file: ./deploy/secrets/web_database_url}
   worker_database_url: {file: ./deploy/secrets/worker_database_url}
   catalog_database_url: {file: ./deploy/secrets/catalog_database_url}
   archive_database_url: {file: ./deploy/secrets/archive_database_url}
+  admin_archive_database_url: {file: ./deploy/secrets/admin_archive_database_url}
+  admin_password: {file: ./deploy/secrets/admin_password}
   transient_migration_database_url: {file: ./deploy/secrets/transient_migration_database_url}
   archive_migration_database_url: {file: ./deploy/secrets/archive_migration_database_url}
   csrf_secret: {file: ./deploy/secrets/csrf_secret}

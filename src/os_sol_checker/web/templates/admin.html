@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}Администрирование — Практикум по ОС{% endblock %}
+{% block content %}
+<header class="page-heading">
+  <p class="eyebrow">Служебный раздел</p>
+  <h1>Статистика и решения</h1>
+  <p class="lede">Общие показатели практикума и архив правильных решений по каждой задаче.</p>
+</header>
+<section class="stats-grid" aria-label="Общая статистика">
+  <div class="stat-card"><span>Загружено решений</span><strong>{{ dashboard.total_submissions }}</strong></div>
+  <div class="stat-card"><span>Активных пользователей</span><strong>{{ dashboard.total_users }}</strong></div>
+  <div class="stat-card"><span>Успешных посылок в архиве</span><strong>{{ dashboard.total_successes }}</strong></div>
+  <div class="stat-card"><span>Уникальных правильных решений</span><strong>{{ dashboard.total_solutions }}</strong></div>
+</section>
+<p class="notice admin-scope">Посылки и пользователи учитываются по доступным transient-записям; срок хранения завершённых посылок ограничен. Успехи и исходники ниже относятся к постоянному архиву. Пользователь означает активную cookie-сессию с заполненным профилем, а не подтверждённую личность.</p>
+<section aria-labelledby="task-statistics-title">
+  <div class="section-heading">
+    <h2 id="task-statistics-title">Задачи</h2>
+    <p>Показаны задачи текущего каталога и задачи, оставшиеся только в исторических данных.</p>
+  </div>
+  {% for task in dashboard.tasks %}
+  <article class="panel admin-task" aria-labelledby="admin-task-{{ loop.index }}">
+    <div class="section-heading">
+      <h2 id="admin-task-{{ loop.index }}">
+        {% if task.in_catalog %}<a href="{{ url_for('task_page', task_id=task.id).path }}">{{ task.title }}</a>{% else %}{{ task.title }}{% endif %}
+      </h2>
+      <p><code>{{ task.id }}</code>{% if not task.in_catalog %} · нет в текущем каталоге{% endif %}</p>
+    </div>
+    <div class="task-stats">
+      <div><span>Посылки в transient</span><strong>{{ task.submissions }}</strong></div>
+      <div><span>Из них accepted</span><strong>{{ task.accepted }}</strong></div>
+      <div><span>Успешных посылок в архиве</span><strong>{{ task.archived_successes }}</strong></div>
+      <div><span>Правильных решений</span><strong>{{ task.solutions | length }}</strong></div>
+    </div>
+    <h3>Правильные решения</h3>
+    {% for solution in task.solutions %}
+    <details class="solution">
+      <summary>Решение {{ loop.index }} · {{ solution.byte_size }} байт · успешных посылок: {{ solution.successful_submissions }}</summary>
+      <div>
+        <p class="solution-meta">Первый успех: {{ solution.first_accepted_at }}<br>SHA-256: <code>{{ solution.sha256 }}</code></p>
+        <pre><code>{{ solution.source }}</code></pre>
+      </div>
+    </details>
+    {% else %}<p class="empty-state">Правильных решений пока нет.</p>{% endfor %}
+  </article>
+  {% else %}<p class="empty-state">Задач пока нет.</p>{% endfor %}
+</section>
+{% endblock %}

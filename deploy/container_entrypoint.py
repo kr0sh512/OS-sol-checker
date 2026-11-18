@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 SECRETS = {
-    "web": ("TRANSIENT_DATABASE_URL", "CSRF_SECRET"),
+    "web": ("TRANSIENT_DATABASE_URL", "ADMIN_ARCHIVE_DATABASE_URL", "ADMIN_PASSWORD", "CSRF_SECRET"),
     "worker": ("TRANSIENT_DATABASE_URL", "ARCHIVE_DATABASE_URL", "RUNNER_TOKEN"),
     "catalog": ("TRANSIENT_DATABASE_URL",),
     "runner": ("RUNNER_TOKEN",),

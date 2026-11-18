@@ -25,6 +25,7 @@ from os_sol_checker.domain.verdicts import SubmissionStatus, Verdict
 from os_sol_checker.main import create_app
 
 ORIGIN = "https://checker.example"
+ADMIN_PASSWORD = "test-admin-password-with-32-bytes"
 TASK_ID = "a" * 64
 
 
@@ -37,6 +38,7 @@ class IsolatedStore:
         self.pointers = {}
         self.next_cached = False
         self.heartbeat = True
+        self.admin_reads = 0
         self.policy = JudgePolicy(runner_image_digest="sha256:" + "b" * 64,
                                   sandbox_profile_digest="c" * 64, flags_digest="d" * 64)
         task = Task(id=TASK_ID, topic_id="topic", title="Сумма <тест>", relative_path="private/path",
@@ -53,6 +55,12 @@ class IsolatedStore:
     async def worker_alive(self): return self.heartbeat
     async def current_catalog(self): return self.snapshot
     async def current_policy(self): return self.policy
+    async def admin_statistics(self):
+        self.admin_reads += 1
+        return {"total_submissions": 7, "total_users": 3, "tasks": {
+            TASK_ID: {"submissions": 5, "accepted": 2},
+            "archived/task": {"submissions": 2, "accepted": 0},
+        }}
 
     async def create_session(self, token_hash, ttl_days):
         profile = SessionProfile(id=uuid4(), expires_at=datetime.now(UTC) + timedelta(days=ttl_days))
@@ -89,15 +97,42 @@ class IsolatedStore:
         return submission if submission and submission.session_id == session_id else None
 
 
+class IsolatedAdminStore:
+    def __init__(self):
+        self.opened = False
+        self.closed = False
+        self.healthy = True
+        self.reads = 0
+
+    async def open(self): self.opened = True
+    async def close(self): self.closed = True
+    async def health(self): return self.healthy
+    async def correct_solutions(self):
+        self.reads += 1
+        return [
+            {"task_id": TASK_ID, "sha256": "1" * 64, "byte_size": 42,
+             "source": "int main(void) { /* <script>x</script>\u202e */ }".encode(),
+             "first_accepted_at": datetime(2026, 1, 2, 3, 4, tzinfo=UTC), "successful_submissions": 3},
+            {"task_id": "archived/task", "sha256": "2" * 64, "byte_size": 9,
+             "source": b"return 0;", "first_accepted_at": datetime(2026, 1, 3, tzinfo=UTC),
+             "successful_submissions": 1},
+        ]
+
+
 @pytest.fixture
 def web():
     store = IsolatedStore()
-    app = create_app(Settings(transient_database_url="postgresql://test", public_origin=ORIGIN,
-                              csrf_secret="test-secret-only"))
+    admin_store = IsolatedAdminStore()
+    app = create_app(Settings(
+        transient_database_url="postgresql://test", admin_archive_database_url="postgresql://admin-test",
+        admin_password=ADMIN_PASSWORD, public_origin=ORIGIN, csrf_secret="test-secret-only",
+    ))
     app.state.store_factory = lambda settings: store
+    app.state.admin_store_factory = lambda settings: admin_store
     with TestClient(app, base_url=ORIGIN) as client:
         yield client, store
     assert store.opened and store.closed
+    assert admin_store.opened and admin_store.closed
 
 
 def authenticate(client, *, name="Иван", group="ИУ-12"):
@@ -178,6 +213,10 @@ def test_cache_status_stale_pointer_and_readiness(web):
     assert client.get("/health/ready").status_code == 200
     store.heartbeat = False
     assert client.get("/health/ready").status_code == 503
+    store.heartbeat = True
+    client.app.state.admin_store.healthy = False
+    assert client.get("/health/ready").status_code == 503
+    client.app.state.admin_store.healthy = True
     assert client.get("/health/live").status_code == 200
     pointer = next(iter(store.pointers.values()))[0]
     pointer["available"] = False
@@ -235,3 +274,36 @@ def test_mutations_and_status_reads_refresh_the_valid_session_cookie(web):
     status = client.get(sent.headers["location"])
     assert "set-cookie" in status.headers
     assert "Max-Age=2592000" in status.headers["set-cookie"]
+
+
+@pytest.mark.parametrize("credentials", [None, ("admin", "wrong"), ("not-admin", ADMIN_PASSWORD)])
+def test_admin_rejects_missing_and_invalid_credentials_before_reading_data(web, credentials):
+    client, store = web
+    response = client.get("/admin", auth=credentials)
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"].startswith("Basic ")
+    assert response.headers["cache-control"] == "no-store"
+    assert "Требуется авторизация" in response.text and "return 0;" not in response.text
+    assert store.admin_reads == client.app.state.admin_store.reads == 0
+
+
+def test_admin_displays_totals_tasks_and_escaped_correct_sources(web):
+    client, store = web
+    response = client.get("/admin", auth=("admin", ADMIN_PASSWORD))
+    assert response.status_code == 200
+    html = response.text
+    assert "Статистика и решения" in html
+    assert ">7</strong>" in html and ">3</strong>" in html and ">4</strong>" in html
+    assert "Сумма &lt;тест&gt;" in html and "archived/task" in html and "нет в текущем каталоге" in html
+    assert html.count('class="solution"') == 2
+    assert "&lt;script&gt;x&lt;/script&gt;" in html and "<script>x</script>" not in html
+    assert "\\u202e" in html and "02.01.2026 03:04 UTC" in html
+    assert "profile-form" not in html and not client.cookies
+    assert store.admin_reads == client.app.state.admin_store.reads == 1
+
+
+def test_admin_rejects_malformed_basic_credentials(web):
+    client, store = web
+    response = client.get("/admin", headers={"Authorization": "Basic not-base64!"})
+    assert response.status_code == 401
+    assert store.admin_reads == client.app.state.admin_store.reads == 0

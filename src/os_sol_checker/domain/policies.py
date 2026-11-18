@@ -22,11 +22,14 @@ def compare(expected: bytes, actual: bytes) -> bool:
     return expected == actual
 
 
-def preview(value: bytes, limit: int = 4096, *, truncated: bool = False) -> Preview:
-    text = value[:limit].decode("utf-8", errors="replace")
-    safe = "".join(
+def display_text(value: bytes) -> str:
+    text = value.decode("utf-8", errors="replace")
+    return "".join(
         f"\\u{ord(char):04x}" if char not in "\n\t" and unicodedata.category(char) in {"Cc", "Cf"} else char
         for char in text
     )
-    return Preview(text=safe, truncated=truncated or len(value) > limit,
+
+
+def preview(value: bytes, limit: int = 4096, *, truncated: bool = False) -> Preview:
+    return Preview(text=display_text(value[:limit]), truncated=truncated or len(value) > limit,
                    byte_size=None if truncated else len(value))

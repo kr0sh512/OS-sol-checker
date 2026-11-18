@@ -11,8 +11,9 @@ import pytest
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
-from os_sol_checker.adapters.postgres import ArchiveStore, TransientStore
+from os_sol_checker.adapters.postgres import AdminArchiveStore, ArchiveStore, TransientStore
 from os_sol_checker.adapters.postgres.migrate import migrate_database
+from os_sol_checker.application.admin import admin_dashboard
 from os_sol_checker.config import Settings
 from os_sol_checker.domain.errors import CheckerError
 from os_sol_checker.domain.models import (
@@ -480,6 +481,49 @@ async def test_finalization_racing_invalidation_never_publishes_stale_cache(data
     assert cached["n"] == 0 and archived["n"] == 1
 
 
+async def test_admin_statistics_count_receipts_and_deduplicate_sources(databases):
+    db = databases
+    authors = [await db.author(f"Admin stats {index}", "Group") for index in range(3)]
+
+    async def succeed(author, source):
+        submission = await db.accept(author, source)
+        if submission.status == SubmissionStatus.ARCHIVE_PENDING:
+            pending = submission
+        else:
+            async with db.transient.scheduler_lock():
+                job = await db.transient.claim_job()
+                [pending] = await db.transient.complete_job(job.id, success())
+        await db.archive.record_success(pending)
+        await db.transient.finish_archived(pending.id)
+
+    await succeed(authors[0], b"same correct source")
+    await succeed(authors[1], b"same correct source")
+    await succeed(authors[2], b"other correct source")
+    failed = await db.accept(authors[0], b"failed source")
+    async with db.transient.scheduler_lock():
+        job = await db.transient.claim_job()
+        assert job.id == failed.queue_job_id
+        await db.transient.complete_job(job.id, failure())
+
+    admin = AdminArchiveStore(Settings(admin_archive_database_url=db.settings.archive_database_url))
+    await admin.open()
+    try:
+        dashboard = admin_dashboard(
+            db.snapshot, await db.transient.admin_statistics(), await admin.correct_solutions(),
+        )
+    finally:
+        await admin.close()
+    assert dashboard["total_submissions"] == 4
+    assert dashboard["total_users"] == 3
+    assert dashboard["total_successes"] == 3
+    assert dashboard["total_solutions"] == 2
+    [task] = dashboard["tasks"]
+    assert task["submissions"] == 4 and task["accepted"] == 3
+    assert task["archived_successes"] == 3
+    assert {solution["source"] for solution in task["solutions"]} == {"same correct source", "other correct source"}
+    assert sum(solution["successful_submissions"] for solution in task["solutions"]) == 3
+
+
 async def test_service_roles_allow_real_flows_but_deny_cross_role_mutation(databases):
     db = databases
     roles = ["checker_test_" + uuid4().hex for _ in range(3)]
@@ -545,6 +589,41 @@ async def test_service_roles_allow_real_flows_but_deny_cross_role_mutation(datab
             for role in reversed(created):
                 await owner.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
                 await owner.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+
+async def test_archive_admin_role_can_read_but_not_write(databases):
+    db = databases
+    role = "checker_test_" + uuid4().hex
+    store = None
+    async with db.archive.pool.connection() as owner:
+        capability = await (await owner.execute(
+            "SELECT current_user AS name, rolcreaterole OR rolsuper AS allowed FROM pg_roles WHERE rolname = current_user"
+        )).fetchone()
+        if not capability["allowed"]:
+            pytest.skip("archive admin role regression requires a test-owner DSN with CREATEROLE")
+        schema = (await (await owner.execute("SELECT current_schema() AS name")).fetchone())["name"]
+        await owner.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
+        await owner.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(role), sql.Identifier(capability["name"])))
+    try:
+        await migrate_database(db.settings.archive_database_url, "archive", admin_role=role)
+        store = AdminArchiveStore(Settings(admin_archive_database_url=make_conninfo(
+            db.settings.archive_database_url, options=f"-c search_path={schema} -c role={role}",
+        )))
+        await store.open()
+        assert await store.correct_solutions() == []
+        async with store.pool.connection() as connection:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                await connection.execute(
+                    "INSERT INTO blobs(sha256, byte_size, source) VALUES (%s, 0, '')", ("0" * 64,),
+                )
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                await connection.execute("DELETE FROM success_receipts")
+    finally:
+        if store:
+            await store.close()
+        async with db.archive.pool.connection() as owner:
+            await owner.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+            await owner.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
 
 
 async def test_follower_racing_stage_change_observes_current_job_stage(databases):

@@ -146,6 +146,23 @@ class TransientStore(PostgresStore):
             )
             return published
 
+    async def admin_statistics(self) -> dict:
+        async with self.pool.connection() as connection, connection.transaction():
+            await connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            totals = await (await connection.execute(
+                """SELECT (SELECT count(*) FROM submissions) AS total_submissions,
+                          (SELECT count(*) FROM sessions
+                           WHERE expires_at > clock_timestamp() AND name IS NOT NULL) AS total_users"""
+            )).fetchone()
+            rows = await (await connection.execute(
+                """SELECT task_id, count(*) AS submissions,
+                          count(*) FILTER (
+                              WHERE status = 'finished' AND result->>'verdict' = 'accepted'
+                          ) AS accepted
+                   FROM submissions GROUP BY task_id"""
+            )).fetchall()
+        return {**totals, "tasks": {row["task_id"]: row for row in rows}}
+
     async def current_catalog(self) -> CatalogSnapshot | None:
         async with self.pool.connection() as connection:
             row = await (await connection.execute("SELECT catalog FROM checker_state WHERE singleton")).fetchone()

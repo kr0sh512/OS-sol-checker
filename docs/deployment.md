@@ -25,7 +25,7 @@ Docker, nsjail и GCC должны своевременно обновлятьс
 
 | Сервис | Сети | Секреты и данные |
 | --- | --- | --- |
-| web | frontend, db-transient | Только собственный transient DSN и CSRF; каталог read-only |
+| web | frontend, db-transient, db-archive | Собственный transient DSN, CSRF, HTTP Basic admin secret и отдельный read-only archive DSN; каталог read-only |
 | worker | db-transient, db-archive, worker-runner | Собственные transient/archive DSN и runner bearer; каталог read-only |
 | catalog-sync | db-transient, catalog-egress | Только собственный transient DSN; единственный writer каталога |
 | runner | worker-runner (internal) | Только runner bearer; private tmpfs и отдельное делегированное cgroup subtree |
@@ -105,25 +105,44 @@ Compose secrets используют bind mount и не гарантируют �
 смонтированные файлы. Секреты не передаются общим env_file всем сервисам.
 
 Создаются `web_database_url`, `worker_database_url`, `catalog_database_url`,
-`archive_database_url`, `transient_migration_database_url`,
-`archive_migration_database_url`, `csrf_secret`, `runner_token` и шесть
+`archive_database_url`, `admin_archive_database_url`, `transient_migration_database_url`,
+`archive_migration_database_url`, `admin_password`, `csrf_secret`, `runner_token` и семь
 `*_password` файлов: transient_owner, archive_owner, web, worker, catalog,
-archive_worker. `runner_token` — случайный секрет больше 32 байт, только у worker
+archive_worker, archive_admin. `admin_password` — независимый секрет HTTP Basic длиной
+больше 32 байт только у web; `runner_token` — случайный секрет больше 32 байт, только у worker
 и runner. `deploy/container_entrypoint.py` загружает строго role-specific `_FILE`
 секреты в существующие Settings/CLI environment и exec-заменяется реальным сервисом.
 
 `deploy/postgres/*-init.sh` создают разные LOGIN роли `checker_web`,
-`checker_worker`, `checker_catalog`, `checker_archive_runtime`, не объединяя их в
-широкую общую runtime роль. `checker_owner` — bootstrap/migration superuser с
+`checker_worker`, `checker_catalog`, `checker_archive_runtime`, `checker_admin`,
+не объединяя их в широкую общую runtime роль. `checker_admin` получает только SELECT
+из archive для `/admin`; `checker_archive_runtime` остаётся отдельной append-only
+ролью worker. `checker_owner` — bootstrap/migration superuser с
 разными паролями в двух БД. `migrate` вызывает:
 
 ```text
 checker-migrate --web-role checker_web --worker-role checker_worker
                 --catalog-role checker_catalog --archive-role checker_archive_runtime
+                --admin-role checker_admin
 ```
 
-Миграции задают прикладные grants и отзывают public CREATE. Web не читает archive,
-catalog не получает исходники/сессии, worker не публикует каталог. Runtime не
+Для уже инициализированного `archive-data` init-скрипты PostgreSQL автоматически не
+повторяются. Перед обновлённым `migrate` нужен явный идемпотентный upgrade:
+
+```sh
+sudo python3 deploy/bootstrap_secrets.py --add-admin
+docker compose exec -T postgres-archive sh /docker-entrypoint-initdb.d/10-roles.sh
+docker compose run --rm migrate
+```
+
+`--add-admin` создаёт с O_EXCL только `archive_admin_password`,
+`admin_archive_database_url` и `admin_password`, не меняя существующие секреты.
+Повторно запущенный archive init создаёт отсутствующие LOGIN-роли и синхронизирует их
+пароли с mounted secrets. После успешной миграции application services запускаются
+обычным `docker compose up -d`.
+
+Миграции задают прикладные grants и отзывают public CREATE. Web читает archive только
+через SELECT-only `checker_admin`, catalog не получает исходники/сессии, worker не публикует каталог. Runtime не
 мигрирует автоматически и не получает owner DSN. После потери ephemeral
 postgres-transient необходимо заново выполнить `docker compose run --rm migrate`
 и затем перезапустить application services; heartbeat/readiness до этого должны

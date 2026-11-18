@@ -4,7 +4,7 @@
 
 ## Компоненты
 
-- FastAPI/Jinja2: темы, задачи, безопасный Markdown, независимые закрытые подсказки, профиль и отправка `.c`.
+- FastAPI/Jinja2: темы, задачи, безопасный Markdown, независимые закрытые подсказки, профиль, отправка `.c` и защищённая HTTP Basic страница `/admin` со статистикой и архивными правильными решениями.
 - `catalog-sync`: немедленный импорт и периодический HTTPS Git fetch, immutable snapshots, глобальный tests fingerprint и атомарная публикация.
 - Временная PostgreSQL: cookie-сессии, все принятые отправки, очередь, кэш и generation/policy fencing.
 - Worker: один активный планировщик, N параллельных executions, остановка на первом непрошедшем тесте, независимая доставка успехов в архив.
@@ -22,7 +22,7 @@ uv sync --frozen --extra dev
 cp .env.example .env
 ```
 
-Для выбранной роли заполнить только необходимые переменные; не передавать web пароль архива или runner token. `CATALOG_ROOT` — общий каталог immutable snapshots для sync/web/worker. Секреты и `var/` исключены из VCS.
+Для выбранной роли заполнить только необходимые переменные; не передавать web append-only archive DSN работника или runner token. Для `/admin` web получает отдельные `ADMIN_ARCHIVE_DATABASE_URL` (read-only роль) и `ADMIN_PASSWORD` (не менее 32 байт). `CATALOG_ROOT` — общий каталог immutable snapshots для sync/web/worker. Секреты и `var/` исключены из VCS.
 
 ### Миграции
 
@@ -32,7 +32,8 @@ cp .env.example .env
 export TRANSIENT_MIGRATION_DATABASE_URL='postgresql://OWNER:PASS@HOST/checker_transient'
 export ARCHIVE_MIGRATION_DATABASE_URL='postgresql://OWNER:PASS@HOST/checker_archive'
 uv run checker-migrate --web-role checker_web --worker-role checker_worker \
-  --catalog-role checker_catalog --archive-role checker_archive_runtime
+  --catalog-role checker_catalog --archive-role checker_archive_runtime \
+  --admin-role checker_admin
 ```
 
 Для частного development-окружения без созданных ролей можно выполнить `uv run checker-migrate`: явные owner DSN берутся из переменных выше либо из `TRANSIENT_DATABASE_URL`/`ARCHIVE_DATABASE_URL`. Использование owner-роли самим приложением не является рекомендуемой production-конфигурацией.
@@ -56,7 +57,7 @@ uv run checker-worker
 uv run checker-web --host 127.0.0.1 --port 8000
 ```
 
-Runner запускается только в подготовленном исполнительном контейнере. Worker получает проверенную политику из его внутреннего API и публикует её в БД. Web требует точный `PUBLIC_ORIGIN=https://...` и `CSRF_SECRET`; внешний HTTPS reverse proxy направляет запросы на локальный backend. Secure-cookie не следует отключать для обхода настройки HTTPS.
+Runner запускается только в подготовленном исполнительном контейнере. Worker получает проверенную политику из его внутреннего API и публикует её в БД. Web требует точный `PUBLIC_ORIGIN=https://...`, `CSRF_SECRET`, `ADMIN_PASSWORD` и read-only `ADMIN_ARCHIVE_DATABASE_URL`; внешний HTTPS reverse proxy направляет запросы на локальный backend. `/admin` запрашивает HTTP Basic credentials с именем `admin`. Secure-cookie не следует отключать для обхода настройки HTTPS.
 
 `GET /health/live` проверяет web-процесс. `GET /health/ready` дополнительно проверяет БД, каталог, активную политику и heartbeat планировщика; heartbeat выдаётся при доступных обязательных зависимостях. Готовность HTTP не заменяет испытание изоляции.
 
@@ -98,11 +99,12 @@ uv run pytest tests/integration/test_postgres.py
 
 ### Выполнено при интеграции
 
-- `uv sync --frozen --extra dev`; полный `uv run pytest -q` с настоящими двумя PostgreSQL DSN: **204 passed, 8 skipped**. Пропущены opt-in проверки реального nsjail. Осталось одно стороннее предупреждение Starlette о deprecated httpx TestClient; оно не подавлено.
+- `uv sync --frozen --extra dev`; полный `uv run pytest -q` с настоящими двумя PostgreSQL DSN: **213 passed, 11 skipped**. Пропущены opt-in проверки реального nsjail. Осталось одно стороннее предупреждение Starlette о deprecated httpx TestClient; оно не подавлено.
 - `uv run ruff check src tests sandbox deploy`: все проверки пройдены.
 - Миграции и least-privilege grants применены к настоящему PostgreSQL; повторный запуск мигратора успешен, включая `002_submission_test_count.sql`. Интеграционные регрессии проверяют кэш/followers, архив, invalidation и конкурентные переходы.
 - Настоящие `checker-catalog --once` и polling-процесс импортировали upstream `ab6760a333dc1b452aac6e2cb37ffa9c850c4c3c`: одна активная задача, две пары пустых тестов и две подсказки. Две последовательные публикации неизменённого дерева сохранили generation. Пустые upstream-тесты не доказывают корректность judge.
 - Chromium через локальный HTTPS → HTTP reverse proxy: навигация, профиль/reload, независимые подсказки, управление клавиатурой, UUID, очередь, включительная граница файла и серверный `413 source_too_large`. На ширине 390 CSS px горизонтального переполнения нет; styles/scripts загружаются без mixed content.
+- `/admin` проверен в Chromium через локальный HTTP backend с изолированными store-фикстурами: Basic Auth, общие счётчики, текущая и архивная задачи, раскрытие исходника, ширина 390 CSS px без горизонтального переполнения и пустой browser error log. Пользовательский C не компилировался и не исполнялся.
 - Отображение результата, повторный cache hit с новым UUID и восстановление последней посылки проверены на **явно искусственном compile_error в отдельной временной БД**. Этот UI smoke не компилирует и не исполняет C и не является end-to-end проверкой judge.
 - Оба Dockerfile успешно собраны через rootless Podman. `docker compose config` разобран поставщиком Podman Compose 1.6.0; полный Compose stack на rootful Docker здесь не поднимался.
 - Собранный runner в неподготовленном rootless-контейнере объявил execution disabled: аутентифицированные `/health` и валидное резервирование вернули `503`, список executions пуст. Fallback не использовался.

@@ -32,6 +32,7 @@ def _scripts(kind: str) -> list[tuple[str, str]]:
 async def migrate_database(
     dsn: str, kind: str, runtime_role: str | None = None, *,
     web_role: str | None = None, worker_role: str | None = None, catalog_role: str | None = None,
+    admin_role: str | None = None,
 ) -> None:
     if not dsn:
         raise ValueError(f"explicit {kind} migration database URL is required")
@@ -63,7 +64,7 @@ async def migrate_database(
                 "INSERT INTO checker_schema_migrations(version, checksum) VALUES (%s, %s)", (version, checksum),
             )
         await grant_roles(connection, kind, runtime_role, web_role=web_role,
-                          worker_role=worker_role, catalog_role=catalog_role)
+                          worker_role=worker_role, catalog_role=catalog_role, admin_role=admin_role)
 
 
 async def _run(arguments) -> None:
@@ -72,7 +73,9 @@ async def _run(arguments) -> None:
     for kind in targets:
         dsn = os.environ.get(f"{kind.upper()}_MIGRATION_DATABASE_URL") or getattr(settings, f"{kind}_database_url")
         service_roles = {"web_role": arguments.web_role, "worker_role": arguments.worker_role,
-                             "catalog_role": arguments.catalog_role} if kind == "transient" else {}
+                         "catalog_role": arguments.catalog_role} if kind == "transient" else {
+            "admin_role": arguments.admin_role,
+        }
         await migrate_database(dsn, kind, getattr(arguments, f"{kind}_role"), **service_roles)
 
 
@@ -81,6 +84,7 @@ def main() -> None:
     parser.add_argument("--database", choices=("both", "transient", "archive"), default="both")
     parser.add_argument("--transient-role", help="explicit broad transient role, instead of service-specific grants")
     parser.add_argument("--archive-role", help="existing append-only archive runtime group role")
+    parser.add_argument("--admin-role", help="existing read-only archive role for the admin page")
     parser.add_argument("--web-role", help="existing web LOGIN/group role for session and acceptance operations")
     parser.add_argument("--worker-role", help="existing scheduler role for lifecycle, policy and cleanup")
     parser.add_argument("--catalog-role", help="existing catalog role for publication and invalidation")

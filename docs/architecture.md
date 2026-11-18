@@ -16,6 +16,7 @@
 flowchart LR
     Browser[Браузер] --> Web[Web / API]
     Web --> Transient[(Временная БД и очередь)]
+    Web -->|read-only admin| Archive[(Постоянный архив)]
     Git[OS-tasks] --> Sync[Синхронизация каталога]
     Sync --> Catalog[Неизменяемый снимок заданий]
     Web --> Catalog
@@ -36,6 +37,7 @@ flowchart LR
 | `application/submissions.py` | Приём посылки, проверка кэша, создание записи и задания очереди. |
 | `application/judging.py` | Компиляция, последовательные тесты, первый сбой, терминальный результат. |
 | `application/archive.py` | Идемпотентное сохранение успешного исходника и факта успеха. |
+| `application/admin.py` | Объединение transient-счётчиков и постоянного архива для административной страницы. |
 | `application/sessions.py` | Имя, группа, принадлежность посылок и последняя посылка по задаче. |
 | `ports/` | Контракты каталога, временного хранилища, архива, очереди и песочницы. |
 | `adapters/catalog/` | Безопасное получение Git-снимка, парсинг структуры/Markdown и отпечаток tests. |
@@ -63,6 +65,7 @@ DTO находятся в `domain/models.py`, состояния — в `domain/
 | `ResultCache` | `get(cache_key)`, `put_if_current(generation, key, result)`; только окончательные результаты проверки, не инфраструктурные ошибки. |
 | `Queue` | `claim()`, `finish()`, `invalidate_generation()`; очередь и посылка в одной временной БД. |
 | `AcceptedSolutionStore` | `record_success(identity, source, task_id, context, submitter)`; атомарная уникальность blob и связи с задачей. |
+| `AdminArchiveStore` | Только чтение: уникальные `(task_id, sha256, byte_size)` исходники, первые успехи и число receipts; не получает INSERT/UPDATE/DELETE. |
 | `OutputComparator` | `compare(expected_bytes, actual_bytes) -> match / bounded_diff`; начальная политика — строгое побайтовое равенство. |
 | `SandboxBackend` | `open(submission_id, policy, remaining_seconds) -> handle`, `compile(handle, source) -> artifact / failure`, `run(handle, artifact, stdin) -> outcome`, `destroy(handle)`; runner сам ограничивает время и слоты даже при потере worker. |
 | `SessionStore` | Случайная сессия, профиль, принадлежность посылок, last-submission; UUID посылки сам по себе не даёт доступ. |
@@ -97,7 +100,7 @@ Runner принимает только внутренние аутентифиц
 
 Транспорт начальной политики рассчитан на `0 < MAX_SOURCE_BYTES <= 102400`, `0 < MAX_OUTPUT_BYTES <= 65536` и `0 < MAX_ARTIFACT_BYTES <= 1048576`. Превышение этих верхних границ — ошибка конфигурации, а не неявное усечение данных. Меньшие лимиты проверяются обеими сторонами по подтверждённой политике.
 
-`PUBLIC_ORIGIN` (точный HTTPS origin интерфейса), `CSRF_SECRET`, `RUNNER_TOKEN`, обе database URL и `RUNNER_IMAGE` (неизменяемая ссылка по digest) обязательны без defaults. Секреты доступны только нужным сервисам и не попадают в jail. Число runner-реплик — строго одно: глобальный предел обеспечивают worker и авторитетный локальный семафор runner. Поддерживаемый Linux-хост, cgroup delegation и проверенные права описаны в [развёртывании](deployment.md).
+`PUBLIC_ORIGIN` (точный HTTPS origin интерфейса), `CSRF_SECRET`, `RUNNER_TOKEN`, `ADMIN_PASSWORD`, database URL для каждой роли и `RUNNER_IMAGE` (неизменяемая ссылка по digest) обязательны без defaults. Web получает отдельные `ADMIN_ARCHIVE_DATABASE_URL` с SELECT-only archive ролью и admin secret; append-only `ARCHIVE_DATABASE_URL` остаётся у worker. Секреты доступны только нужным сервисам и не попадают в jail. Число runner-реплик — строго одно: глобальный предел обеспечивают worker и авторитетный локальный семафор runner. Поддерживаемый Linux-хост, cgroup delegation и проверенные права описаны в [развёртывании](deployment.md).
 
 ## Связанные спецификации
 

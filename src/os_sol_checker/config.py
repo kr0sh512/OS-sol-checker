@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     catalog_root: Path = Path("var/catalog")
     transient_database_url: str = ""
     archive_database_url: str = ""
+    admin_archive_database_url: str = ""
+    admin_password: str = ""
     public_origin: str = ""
     csrf_secret: str = ""
     runner_url: str = "http://runner:8081"
@@ -52,7 +54,8 @@ class Settings(BaseSettings):
 
     def require(self, role: str) -> None:
         required = {
-            "web": ("transient_database_url", "public_origin", "csrf_secret"),
+            "web": ("transient_database_url", "admin_archive_database_url", "admin_password",
+                    "public_origin", "csrf_secret"),
             "worker": ("transient_database_url", "archive_database_url", "runner_token"),
             "catalog": ("transient_database_url",),
             "runner": ("runner_token", "runner_image"),
@@ -62,6 +65,8 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name.upper()} is required for {role}")
         if role in {"worker", "runner"} and len(self.runner_token.encode()) < 32:
             raise ValueError("RUNNER_TOKEN must contain at least 32 bytes")
+        if role == "web" and len(self.admin_password.encode()) < 32:
+            raise ValueError("ADMIN_PASSWORD must contain at least 32 bytes")
         if role == "web" and not self.public_origin.startswith("https://"):
             raise ValueError("PUBLIC_ORIGIN must use HTTPS")
         if role == "runner" and "@sha256:" not in self.runner_image:
